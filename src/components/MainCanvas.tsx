@@ -19,215 +19,162 @@ const TOOL_CURSORS: Record<Tool, string> = {
 }
 
 export default function MainCanvas({ activeTool, zoom, activePlan }: MainCanvasProps) {
-  const cursor = TOOL_CURSORS[activeTool]
-  const scale = zoom / 100
-
   return (
-    <div className="flex-1 flex flex-col bg-slate-700 overflow-hidden">
+    <div
+      className="flex-1 relative bg-slate-950 overflow-hidden flex flex-col"
+      style={{ cursor: TOOL_CURSORS[activeTool] }}
+    >
       {/* Plan title bar */}
-      <div className="flex items-center justify-between px-4 py-1.5 bg-slate-800 border-b border-slate-700 shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-slate-200">{activePlan}</span>
-          <span className="text-xs text-slate-500 bg-slate-700 px-2 py-0.5 rounded">A1</span>
-          <span className="text-xs text-slate-500">22/05/2023</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Zoom: {zoom}%</span>
-          <div className="w-px h-4 bg-slate-600" />
-          <span className="text-xs text-slate-500 capitalize">{activeTool}</span>
+      <div className="flex items-center justify-between px-4 py-1.5 bg-slate-800/80 border-b border-slate-700 shrink-0 backdrop-blur-sm">
+        <span className="text-sm font-medium text-slate-200">{activePlan}</span>
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span>Quater Plan — projet appel d'offre (16-Mars-2026).qpl</span>
+          <span className="text-slate-600">|</span>
+          <span>{zoom}%</span>
         </div>
       </div>
 
       {/* Canvas area */}
-      <div
-        className="flex-1 overflow-auto flex items-center justify-center p-8"
-        style={{ cursor, background: 'repeating-linear-gradient(0deg, transparent, transparent 24px, rgba(99,102,241,0.03) 24px, rgba(99,102,241,0.03) 25px), repeating-linear-gradient(90deg, transparent, transparent 24px, rgba(99,102,241,0.03) 24px, rgba(99,102,241,0.03) 25px)' }}
-      >
-        {/* Paper / Plan */}
+      <div className="flex-1 overflow-auto flex items-center justify-center p-8">
         <div
-          className="bg-white shadow-2xl relative"
+          className="relative bg-white shadow-2xl shadow-black/50"
           style={{
-            width: `${841 * scale}px`,
-            height: `${594 * scale}px`,
-            minWidth: `${841 * scale}px`,
-            minHeight: `${594 * scale}px`,
-            transformOrigin: 'center',
+            width: `${8.27 * zoom * 1.2}px`,
+            height: `${5.83 * zoom * 1.2}px`,
+            minWidth: '400px',
+            minHeight: '280px',
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'center center',
           }}
         >
           {/* Floor plan SVG */}
           <svg
-            viewBox="0 0 841 594"
-            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 800 566"
             className="w-full h-full"
+            xmlns="http://www.w3.org/2000/svg"
           >
-            {/* Grid */}
             <defs>
               <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="0.5" />
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="0.3" />
               </pattern>
               <pattern id="gridMajor" width="100" height="100" patternUnits="userSpaceOnUse">
                 <rect width="100" height="100" fill="url(#grid)" />
-                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#e0e0e0" strokeWidth="1" />
+                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#d1d5db" strokeWidth="0.5" />
               </pattern>
             </defs>
-            <rect width="841" height="594" fill="url(#gridMajor)" />
 
-            {/* Title block border */}
-            <rect x="10" y="10" width="821" height="574" fill="none" stroke="#333" strokeWidth="1.5" />
-            <rect x="10" y="10" width="821" height="574" fill="none" stroke="#555" strokeWidth="0.5" rx="1" />
+            {/* Background */}
+            <rect width="800" height="566" fill="white" />
+            <rect width="800" height="566" fill="url(#gridMajor)" />
 
-            {/* Title block at bottom */}
-            <rect x="10" y="530" width="821" height="54" fill="#f8f8f8" stroke="#333" strokeWidth="1" />
-            <line x1="300" y1="530" x2="300" y2="584" stroke="#aaa" strokeWidth="0.5" />
-            <line x1="550" y1="530" x2="550" y2="584" stroke="#aaa" strokeWidth="0.5" />
-            <line x1="700" y1="530" x2="700" y2="584" stroke="#aaa" strokeWidth="0.5" />
+            {/* Outer building boundary */}
+            <rect x="50" y="50" width="700" height="466" fill="none" stroke="#1f2937" strokeWidth="3" />
 
-            <text x="155" y="552" textAnchor="middle" fontSize="8" fill="#666">HGA ARCHITECTURE</text>
-            <text x="155" y="565" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#222">2_ST12-PH5S1</text>
-            <text x="155" y="578" textAnchor="middle" fontSize="7" fill="#888">Plan de surface - Niveau R+1</text>
+            {/* Main rooms */}
+            {/* Room 1 - top left large */}
+            <rect x="50" y="50" width="280" height="200" fill="rgba(99,102,241,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 2 - top center */}
+            <rect x="330" y="50" width="200" height="150" fill="rgba(16,185,129,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 3 - top right */}
+            <rect x="530" y="50" width="220" height="200" fill="rgba(245,158,11,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 4 - middle */}
+            <rect x="50" y="250" width="180" height="130" fill="rgba(239,68,68,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 5 - center large */}
+            <rect x="230" y="200" width="340" height="200" fill="rgba(139,92,246,0.04)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 6 - right middle */}
+            <rect x="570" y="250" width="180" height="130" fill="rgba(20,184,166,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 7 - bottom left */}
+            <rect x="50" y="380" width="280" height="136" fill="rgba(249,115,22,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Room 8 - bottom right */}
+            <rect x="330" y="400" width="420" height="116" fill="rgba(236,72,153,0.03)" stroke="#374151" strokeWidth="1.5" />
+            {/* Corridor */}
+            <rect x="230" y="50" width="100" height="466" fill="rgba(0,0,0,0.02)" stroke="#9ca3af" strokeWidth="0.8" strokeDasharray="4,2" />
 
-            <text x="425" y="548" textAnchor="middle" fontSize="7" fill="#666">Projet:</text>
-            <text x="425" y="560" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#333">ST GERMAIN DCE</text>
-            <text x="425" y="572" textAnchor="middle" fontSize="7" fill="#666">Phase 5 - Section 1</text>
-
-            <text x="625" y="548" textAnchor="middle" fontSize="7" fill="#666">Échelle: 1:100</text>
-            <text x="625" y="560" textAnchor="middle" fontSize="7" fill="#666">Format: A1</text>
-            <text x="625" y="572" textAnchor="middle" fontSize="7" fill="#666">Date: 22/05/2023</text>
-
-            <text x="770" y="552" textAnchor="middle" fontSize="7" fill="#666">N° Plan:</text>
-            <text x="770" y="566" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#333">PLN_102</text>
-            <text x="770" y="578" textAnchor="middle" fontSize="7" fill="#666">Rév. A</text>
-
-            {/* Main floor plan - complex floor plan */}
-            {/* Outer walls */}
-            <rect x="80" y="60" width="480" height="420" fill="#fafafa" stroke="#222" strokeWidth="2.5" />
-
-            {/* Interior partition walls */}
-            {/* Horizontal walls */}
-            <line x1="80" y1="180" x2="280" y2="180" stroke="#222" strokeWidth="2" />
-            <line x1="330" y1="180" x2="560" y2="180" stroke="#222" strokeWidth="2" />
-            <line x1="80" y1="310" x2="200" y2="310" stroke="#222" strokeWidth="2" />
-            <line x1="200" y1="310" x2="200" y2="480" stroke="#222" strokeWidth="2" />
-            <line x1="280" y1="310" x2="560" y2="310" stroke="#222" strokeWidth="2" />
-            <line x1="280" y1="180" x2="280" y2="370" stroke="#222" strokeWidth="2" />
-            <line x1="280" y1="410" x2="280" y2="480" stroke="#222" strokeWidth="2" />
-            <line x1="400" y1="180" x2="400" y2="310" stroke="#222" strokeWidth="2" />
-            <line x1="200" y1="370" x2="360" y2="370" stroke="#222" strokeWidth="2" />
-            <line x1="360" y1="370" x2="360" y2="480" stroke="#222" strokeWidth="2" />
-            <line x1="360" y1="430" x2="560" y2="430" stroke="#222" strokeWidth="2" />
-
-            {/* Doors - arcs indicating swing */}
-            <path d="M 280 368 Q 260 350 278 330" fill="none" stroke="#555" strokeWidth="0.8" strokeDasharray="2,1" />
-            <path d="M 280 412 Q 260 430 278 450" fill="none" stroke="#555" strokeWidth="0.8" strokeDasharray="2,1" />
-            <path d="M 328 180 Q 310 200 330 220" fill="none" stroke="#555" strokeWidth="0.8" strokeDasharray="2,1" />
-            <path d="M 198 330 Q 180 320 180 310" fill="none" stroke="#555" strokeWidth="0.8" strokeDasharray="2,1" />
-            <path d="M 358 400 Q 370 398 370 370" fill="none" stroke="#555" strokeWidth="0.8" strokeDasharray="2,1" />
+            {/* Doors */}
+            <path d="M 50 180 Q 65 180 65 195" fill="none" stroke="#6b7280" strokeWidth="1.2" />
+            <line x1="50" y1="180" x2="50" y2="195" stroke="#6b7280" strokeWidth="1.2" />
+            <path d="M 328 130 Q 328 115 313 115" fill="none" stroke="#6b7280" strokeWidth="1.2" />
+            <line x1="328" y1="115" x2="328" y2="130" stroke="#6b7280" strokeWidth="1.2" />
+            <path d="M 570 320 Q 555 320 555 335" fill="none" stroke="#6b7280" strokeWidth="1.2" />
+            <line x1="555" y1="320" x2="570" y2="320" stroke="#6b7280" strokeWidth="1.2" />
 
             {/* Windows */}
-            <rect x="80" y="100" width="4" height="40" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="82" y1="100" x2="82" y2="140" stroke="#222" strokeWidth="0.5" />
-            <rect x="80" y="200" width="4" height="60" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="82" y1="200" x2="82" y2="260" stroke="#222" strokeWidth="0.5" />
-            <rect x="80" y="360" width="4" height="60" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="82" y1="360" x2="82" y2="420" stroke="#222" strokeWidth="0.5" />
-
-            <rect x="200" y="56" width="60" height="4" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="200" y1="58" x2="260" y2="58" stroke="#222" strokeWidth="0.5" />
-            <rect x="360" y="56" width="80" height="4" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="360" y1="58" x2="440" y2="58" stroke="#222" strokeWidth="0.5" />
-
-            <rect x="556" y="100" width="4" height="50" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="558" y1="100" x2="558" y2="150" stroke="#222" strokeWidth="0.5" />
-            <rect x="556" y="220" width="4" height="60" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="558" y1="220" x2="558" y2="280" stroke="#222" strokeWidth="0.5" />
-            <rect x="556" y="350" width="4" height="60" fill="white" stroke="#222" strokeWidth="1.5" />
-            <line x1="558" y1="350" x2="558" y2="410" stroke="#222" strokeWidth="0.5" />
-
-            {/* Structural columns */}
-            <rect x="76" y="56" width="8" height="8" fill="#666" stroke="#333" strokeWidth="0.5" />
-            <rect x="556" y="56" width="8" height="8" fill="#666" stroke="#333" strokeWidth="0.5" />
-            <rect x="76" y="476" width="8" height="8" fill="#666" stroke="#333" strokeWidth="0.5" />
-            <rect x="556" y="476" width="8" height="8" fill="#666" stroke="#333" strokeWidth="0.5" />
-            <rect x="276" y="56" width="8" height="8" fill="#888" stroke="#333" strokeWidth="0.5" />
-            <rect x="396" y="56" width="8" height="8" fill="#888" stroke="#333" strokeWidth="0.5" />
-            <rect x="276" y="476" width="8" height="8" fill="#888" stroke="#333" strokeWidth="0.5" />
-            <rect x="396" y="476" width="8" height="8" fill="#888" stroke="#333" strokeWidth="0.5" />
-
-            {/* Room labels */}
-            <text x="155" y="130" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Bureau A</text>
-            <text x="155" y="143" textAnchor="middle" fontSize="7" fill="#888">21,69 m²</text>
-
-            <text x="420" y="130" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Salle de réunion</text>
-            <text x="420" y="143" textAnchor="middle" fontSize="7" fill="#888">48,3 m²</text>
-
-            <text x="155" y="250" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Hall / Circulation</text>
-            <text x="155" y="263" textAnchor="middle" fontSize="7" fill="#888">18,61 m²</text>
-
-            <text x="340" y="250" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Open Space</text>
-            <text x="340" y="263" textAnchor="middle" fontSize="7" fill="#888">62,24 m²</text>
-
-            <text x="130" y="410" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Sanitaires</text>
-            <text x="130" y="423" textAnchor="middle" fontSize="7" fill="#888">12,33 m²</text>
-
-            <text x="310" y="410" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Local tech.</text>
-            <text x="310" y="423" textAnchor="middle" fontSize="7" fill="#888">9,91 m²</text>
-
-            <text x="460" y="400" textAnchor="middle" fontSize="9" fill="#444" fontStyle="italic">Archives</text>
-            <text x="460" y="413" textAnchor="middle" fontSize="7" fill="#888">15,58 m²</text>
+            <rect x="100" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
+            <line x1="100" y1="50.5" x2="160" y2="50.5" stroke="#374151" strokeWidth="0.6" />
+            <rect x="380" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
+            <line x1="380" y1="50.5" x2="440" y2="50.5" stroke="#374151" strokeWidth="0.6" />
+            <rect x="600" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
+            <line x1="600" y1="50.5" x2="660" y2="50.5" stroke="#374151" strokeWidth="0.6" />
+            <rect x="745" y="130" width="5" height="60" fill="white" stroke="#374151" strokeWidth="1" />
+            <line x1="747.5" y1="130" x2="747.5" y2="190" stroke="#374151" strokeWidth="0.6" />
 
             {/* Dimension lines */}
-            <line x1="80" y1="50" x2="560" y2="50" stroke="#e67e22" strokeWidth="0.7" markerEnd="url(#arrow)" markerStart="url(#arrow)" />
-            <text x="320" y="47" textAnchor="middle" fontSize="7" fill="#e67e22">24.00 m</text>
+            <line x1="50" y1="530" x2="750" y2="530" stroke="#6366f1" strokeWidth="0.8" strokeDasharray="none" />
+            <line x1="50" y1="525" x2="50" y2="535" stroke="#6366f1" strokeWidth="0.8" />
+            <line x1="750" y1="525" x2="750" y2="535" stroke="#6366f1" strokeWidth="0.8" />
+            <text x="400" y="543" textAnchor="middle" fontSize="9" fill="#6366f1" fontFamily="sans-serif">149,39 m</text>
 
-            <line x1="70" y1="60" x2="70" y2="480" stroke="#e67e22" strokeWidth="0.7" />
-            <text x="60" y="270" textAnchor="middle" fontSize="7" fill="#e67e22" transform="rotate(-90 60 270)">21.00 m</text>
+            <line x1="770" y1="50" x2="770" y2="516" stroke="#6366f1" strokeWidth="0.8" />
+            <line x1="765" y1="50" x2="775" y2="50" stroke="#6366f1" strokeWidth="0.8" />
+            <line x1="765" y1="516" x2="775" y2="516" stroke="#6366f1" strokeWidth="0.8" />
+            <text x="790" y="285" textAnchor="middle" fontSize="9" fill="#6366f1" fontFamily="sans-serif" transform="rotate(90, 790, 285)">62,24 m</text>
 
-            {/* Measurement annotations (colored polylines) */}
-            {/* VCT measurement line in indigo */}
-            <polyline
-              points="90,180 90,310 200,310 200,370 280,370 280,480"
-              fill="none"
-              stroke="#6366f1"
-              strokeWidth="1.5"
-              strokeDasharray="none"
-            />
-            {/* Surface annotation */}
-            <rect x="85" y="65" width="190" height="110" fill="rgba(99,102,241,0.08)" stroke="#6366f1" strokeWidth="1" strokeDasharray="4,2" />
+            {/* Measurement annotations */}
+            <rect x="56" y="56" width="50" height="16" rx="2" fill="rgba(99,102,241,0.15)" />
+            <text x="81" y="67" textAnchor="middle" fontSize="7" fill="#6366f1" fontFamily="sans-serif" fontWeight="600">21,69 m²</text>
+
+            <rect x="340" y="210" width="44" height="14" rx="2" fill="rgba(245,158,11,0.15)" />
+            <text x="362" y="220" textAnchor="middle" fontSize="7" fill="#d97706" fontFamily="sans-serif" fontWeight="600">18,61 m²</text>
 
             {/* North arrow */}
-            <g transform="translate(520, 85)">
-              <circle cx="0" cy="0" r="15" fill="none" stroke="#333" strokeWidth="1" />
-              <polygon points="0,-12 4,0 -4,0" fill="#333" />
-              <polygon points="0,12 4,0 -4,0" fill="white" stroke="#333" strokeWidth="0.5" />
-              <text x="0" y="-16" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#333">N</text>
+            <g transform="translate(720, 90)">
+              <circle cx="0" cy="0" r="15" fill="none" stroke="#9ca3af" strokeWidth="0.8" />
+              <path d="M 0 -12 L 4 4 L 0 0 L -4 4 Z" fill="#374151" />
+              <text x="0" y="-16" textAnchor="middle" fontSize="8" fill="#374151" fontFamily="sans-serif" fontWeight="bold">N</text>
             </g>
 
+            {/* Legend box */}
+            <rect x="580" y="420" width="160" height="80" fill="rgba(255,255,255,0.9)" stroke="#9ca3af" strokeWidth="0.8" />
+            <text x="660" y="434" textAnchor="middle" fontSize="8" fill="#374151" fontFamily="sans-serif" fontWeight="bold">LÉGENDE</text>
+            <rect x="588" y="440" width="10" height="8" fill="rgba(99,102,241,0.15)" stroke="#6366f1" strokeWidth="0.5" />
+            <text x="602" y="448" fontSize="7" fill="#374151" fontFamily="sans-serif">Surface transfo</text>
+            <rect x="588" y="454" width="10" height="8" fill="rgba(245,158,11,0.15)" stroke="#d97706" strokeWidth="0.5" />
+            <text x="602" y="462" fontSize="7" fill="#374151" fontFamily="sans-serif">m² poly transfo</text>
+            <line x1="588" y1="468" x2="598" y2="468" stroke="#6366f1" strokeWidth="1.5" />
+            <text x="602" y="472" fontSize="7" fill="#374151" fontFamily="sans-serif">VCT / VMT</text>
+            <circle cx="593" cy="481" r="3" fill="#ef4444" />
+            <text x="602" y="484" fontSize="7" fill="#374151" fontFamily="sans-serif">Poteaux</text>
+
             {/* Scale bar */}
-            <g transform="translate(430, 510)">
-              <line x1="0" y1="0" x2="100" y2="0" stroke="#333" strokeWidth="1" />
-              <line x1="0" y1="-4" x2="0" y2="4" stroke="#333" strokeWidth="1" />
-              <line x1="50" y1="-2" x2="50" y2="2" stroke="#333" strokeWidth="0.8" />
-              <line x1="100" y1="-4" x2="100" y2="4" stroke="#333" strokeWidth="1" />
-              <rect x="0" y="-4" width="50" height="4" fill="#333" />
-              <rect x="50" y="-4" width="50" height="4" fill="white" stroke="#333" strokeWidth="0.5" />
-              <text x="0" y="10" textAnchor="middle" fontSize="6" fill="#333">0</text>
-              <text x="50" y="10" textAnchor="middle" fontSize="6" fill="#333">5m</text>
-              <text x="100" y="10" textAnchor="middle" fontSize="6" fill="#333">10m</text>
+            <g transform="translate(50, 510)">
+              <line x1="0" y1="0" x2="100" y2="0" stroke="#374151" strokeWidth="1" />
+              <line x1="0" y1="-3" x2="0" y2="3" stroke="#374151" strokeWidth="1" />
+              <line x1="50" y1="-2" x2="50" y2="2" stroke="#374151" strokeWidth="0.8" />
+              <line x1="100" y1="-3" x2="100" y2="3" stroke="#374151" strokeWidth="1" />
+              <text x="0" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">0</text>
+              <text x="50" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">5m</text>
+              <text x="100" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">10m</text>
+              <text x="50" y="10" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">Échelle 1:100</text>
             </g>
           </svg>
         </div>
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center gap-4 px-4 py-1 bg-slate-800 border-t border-slate-700 shrink-0">
-        <span className="text-xs text-slate-500">x: 0.00 m</span>
-        <span className="text-xs text-slate-500">y: 0.00 m</span>
-        <div className="flex-1" />
-        <span className="text-xs text-slate-500">Calque par défaut</span>
-        <div className="w-px h-3 bg-slate-600" />
-        <span className="text-xs text-slate-500">1:100</span>
-        <div className="w-px h-3 bg-slate-600" />
-        <span className="text-xs text-slate-400">{zoom}%</span>
+      <div className="flex items-center justify-between px-4 py-1 bg-slate-800/60 border-t border-slate-700 shrink-0 text-xs text-slate-500">
+        <div className="flex items-center gap-4">
+          <span>Outil: <span className="text-slate-300 capitalize">{activeTool}</span></span>
+          <span>Calque: <span className="text-slate-300">Calque par défaut</span></span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span>Ortho</span>
+          <span className="text-slate-600">|</span>
+          <span>Manuel</span>
+          <span className="text-slate-600">|</span>
+          <span>Qualité: Haute</span>
+          <span className="text-slate-600">|</span>
+          <span className="text-indigo-400">{zoom}%</span>
+        </div>
       </div>
     </div>
   )
