@@ -90,10 +90,23 @@ export default function MainCanvas({
         const canvas = pdfCanvasRef.current!
         canvas.width = viewport.width
         canvas.height = viewport.height
+        const displayW = viewport.width / 2
+        const displayH = viewport.height / 2
         setPdfSize({ width: viewport.width, height: viewport.height })
 
         const ctx = canvas.getContext('2d')!
         await page.render({ canvasContext: ctx, viewport, canvas }).promise
+
+        // Center the PDF in the viewport and fit it
+        if (!cancelled && containerRef.current) {
+          const cw = containerRef.current.clientWidth
+          const ch = containerRef.current.clientHeight
+          const fitScale = Math.min(cw / displayW, ch / displayH) * 0.9
+          const centeredX = (cw - displayW * fitScale) / 2
+          const centeredY = (ch - displayH * fitScale) / 2
+          setScale(fitScale)
+          setPan({ x: centeredX, y: centeredY })
+        }
       } catch (err) {
         console.error('PDF render error:', err)
       }
@@ -180,21 +193,30 @@ export default function MainCanvas({
     setMousePos(null)
   }
 
-  // Right-click → finish path
+  // Right-click → finish path (also adds mouse position as final point if only 1 point placed)
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
-    if (!drawingState || currentPoints.length < 2) {
-      if (drawingState && currentPoints.length < 2) {
-        // Not enough points, just cancel
-        setCurrentPoints([])
-        return
-      }
+    if (!drawingState) return
+
+    // Build final points array: add current mouse pos as the last point if useful
+    const finalPoints = [...currentPoints]
+    const cursorPt = screenToCanvas(e.clientX, e.clientY)
+
+    if (finalPoints.length === 0) {
+      // No points at all — nothing to save
       return
     }
-    const length = calcLength(currentPoints)
+
+    if (finalPoints.length === 1) {
+      // Only start placed: add cursor as end point (2-point path)
+      finalPoints.push(cursorPt)
+    }
+    // >= 2 points: save as-is (don't add cursor again)
+
+    const length = calcLength(finalPoints)
     const path: PerimeterPath = {
       id: crypto.randomUUID(),
-      points: [...currentPoints],
+      points: finalPoints,
       length,
     }
     onPathFinished(drawingState.groupId, path)
