@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { PerimeterGroup } from '../../types'
 
 interface GroupsPanelProps {
@@ -5,6 +7,11 @@ interface GroupsPanelProps {
 }
 
 export default function GroupsPanel({ groups }: GroupsPanelProps) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  const toggle = (id: string) =>
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-8 gap-3 text-center px-4">
@@ -17,49 +24,55 @@ export default function GroupsPanel({ groups }: GroupsPanelProps) {
           </svg>
         </div>
         <p className="text-slate-600 text-xs leading-relaxed">
-          Les groupes apparaîtront ici après avoir importé et annoté un plan.
+          Les groupes apparaîtront ici après avoir tracé un périmètre.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col overflow-y-auto">
-      {groups.map(group => (
-        <div
-          key={group.id}
-          className="border-b border-slate-800 px-2 py-2"
-        >
-          <div className="flex items-center gap-2">
-            {/* Expand arrow placeholder (static for now) */}
-            <span className="text-slate-500 text-xs select-none">▼</span>
-            {/* Color dot */}
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: group.color }}
-            />
-            {/* Name */}
-            <span className="text-xs font-medium text-slate-200 truncate flex-1" title={group.name}>
-              {group.name}
-            </span>
-            {/* Total length */}
-            <span className="text-xs text-slate-400 shrink-0 font-mono">
-              {Math.round(group.totalLength)} px
-            </span>
+    <div className="overflow-y-auto flex-1 text-xs bg-slate-900">
+      {groups.map(group => {
+        const isOpen = expanded[group.id]
+        const totalPx = group.totalLength
+        const hasDetails = group.height !== undefined || group.width !== undefined || group.paths.length > 0
+        return (
+          <div key={group.id}>
+            <button
+              onClick={() => toggle(group.id)}
+              className="flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-slate-800 text-left border-b border-slate-800"
+            >
+              {hasDetails
+                ? (isOpen ? <ChevronDown size={11} className="text-slate-500 shrink-0" /> : <ChevronRight size={11} className="text-slate-500 shrink-0" />)
+                : <span className="w-3 shrink-0" />
+              }
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+              <span className="flex-1 truncate text-slate-200 font-medium">{group.name}</span>
+              <span className="text-slate-400 shrink-0 tabular-nums ml-1">
+                {Math.round(totalPx)} <span className="text-slate-600">px</span>
+              </span>
+            </button>
+
+            {isOpen && hasDetails && (
+              <div className="pl-7 pr-2 py-1 border-b border-slate-800/50 space-y-0.5">
+                {group.height !== undefined && (
+                  <div className="flex justify-between text-slate-500 py-0.5">
+                    <span>Hauteur</span><span>{group.height} m</span>
+                  </div>
+                )}
+                {group.width !== undefined && (
+                  <div className="flex justify-between text-slate-500 py-0.5">
+                    <span>Largeur</span><span>{group.width} m</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-500 py-0.5">
+                  <span>Tracés</span><span>{group.paths.length}</span>
+                </div>
+              </div>
+            )}
           </div>
-          {/* Optional height/width info */}
-          {(group.height !== undefined || group.width !== undefined) && (
-            <div className="flex gap-3 mt-1 ml-7 text-xs text-slate-500">
-              {group.height !== undefined && (
-                <span>Hauteur: {group.height} m</span>
-              )}
-              {group.width !== undefined && (
-                <span>Largeur: {group.width} m</span>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
