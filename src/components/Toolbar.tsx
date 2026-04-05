@@ -23,6 +23,8 @@ import {
   Clipboard,
   Send,
   FileUp,
+  FileSpreadsheet,
+  Crosshair,
 } from 'lucide-react'
 import type { Tool } from '../App'
 import type { PerimeterGroup } from '../types'
@@ -42,6 +44,9 @@ interface ToolbarProps {
   onPerimetreClick: () => void
   onStartDrawingForGroup: (group: PerimeterGroup) => void
   perimeterGroups: PerimeterGroup[]
+  calibrationMode: boolean
+  onCalibrateClick: () => void
+  onExportExcel: () => void
 }
 
 const SCALES = ['1:10', '1:20', '1:25', '1:50', '1:75', '1:100', '1:200', '1:500']
@@ -59,6 +64,9 @@ export default function Toolbar({
   onPerimetreClick,
   onStartDrawingForGroup,
   perimeterGroups,
+  calibrationMode,
+  onCalibrateClick,
+  onExportExcel,
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -118,6 +126,21 @@ export default function Toolbar({
           ))}
         </select>
       </div>
+
+      {/* Calibrer button */}
+      <Tooltip text="Calibrer l'échelle en cliquant 2 points" position="bottom">
+        <button
+          onClick={onCalibrateClick}
+          className={`flex items-center gap-1.5 px-2 h-7 rounded text-xs font-medium transition-colors shrink-0 ${
+            calibrationMode
+              ? 'bg-amber-500 text-white'
+              : 'bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white border border-slate-600'
+          }`}
+        >
+          <Crosshair size={13} />
+          <span className="hidden sm:block">Calibrer</span>
+        </button>
+      </Tooltip>
 
       <div className="toolbar-separator" />
 
@@ -261,6 +284,15 @@ export default function Toolbar({
       {/* Imprimer / Exporter */}
       <ToolbarButton icon={<Printer size={15} />} label="Imprimer" />
       <ToolbarButton icon={<FileDown size={15} />} label="Exporter vers PDF" />
+
+      {/* Export Excel — last button, green, pushed to the right */}
+      <button
+        onClick={onExportExcel}
+        className="flex items-center gap-1.5 px-2.5 h-7 rounded bg-green-600 hover:bg-green-500 text-white text-xs font-medium transition-colors shrink-0 ml-auto"
+      >
+        <FileSpreadsheet size={13} />
+        Export Excel
+      </button>
     </div>
   )
 }

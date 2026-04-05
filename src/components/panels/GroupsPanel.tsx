@@ -1,12 +1,19 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { PerimeterGroup } from '../../types'
+import type { Calibration } from '../../App'
 
 interface GroupsPanelProps {
   groups: PerimeterGroup[]
+  calibration: Calibration | null
 }
 
-export default function GroupsPanel({ groups }: GroupsPanelProps) {
+function formatLength(px: number, calibration: Calibration | null): string {
+  if (!calibration) return `${Math.round(px)} px`
+  return `${(px / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
+}
+
+export default function GroupsPanel({ groups, calibration }: GroupsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const toggle = (id: string) =>
@@ -35,6 +42,7 @@ export default function GroupsPanel({ groups }: GroupsPanelProps) {
       {groups.map(group => {
         const isOpen = expanded[group.id]
         const totalPx = group.totalLength
+        const totalDisplay = formatLength(totalPx, calibration)
         const hasDetails = group.height !== undefined || group.width !== undefined || group.paths.length > 0
         return (
           <div key={group.id}>
@@ -49,7 +57,7 @@ export default function GroupsPanel({ groups }: GroupsPanelProps) {
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
               <span className="flex-1 truncate text-slate-200 font-medium">{group.name}</span>
               <span className="text-slate-400 shrink-0 tabular-nums ml-1">
-                {Math.round(totalPx)} <span className="text-slate-600">px</span>
+                {totalDisplay}
               </span>
             </button>
 

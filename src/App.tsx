@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import * as XLSX from 'xlsx'
 import Toolbar from './components/Toolbar'
 import LeftSidebar from './components/LeftSidebar'
 import MainCanvas from './components/MainCanvas'
@@ -6,8 +7,9 @@ import RightSidebar from './components/RightSidebar'
 import StartupMenu from './components/StartupMenu'
 import AllPlansModal from './components/AllPlansModal'
 import PerimeterModal from './components/PerimeterModal'
+import CalibrationModal from './components/CalibrationModal'
 import type { Project } from './components/StartupMenu'
-import type { Plan, PerimeterGroup, PerimeterPath } from './types'
+import type { Plan, PerimeterGroup, PerimeterPath, SelectedElement } from './types'
 
 export type Tool =
   | 'pointer'
@@ -26,6 +28,11 @@ interface DrawingState {
   thickness: number
 }
 
+export interface Calibration {
+  pixelsPerUnit: number
+  unit: string
+}
+
 function App() {
   const [project, setProject] = useState<Project | null>(null)
   const [activeTool, setActiveTool] = useState<Tool>('pointer')
@@ -38,9 +45,13 @@ function App() {
   const [perimeterGroups, setPerimeterGroups] = useState<PerimeterGroup[]>([])
   const [showPerimeterModal, setShowPerimeterModal] = useState(false)
   const [drawingState, setDrawingState] = useState<DrawingState | null>(null)
+  const [calibration, setCalibration] = useState<Calibration | null>(null)
+  const [calibrationMode, setCalibrationMode] = useState(false)
+  const [pendingCalibPixels, setPendingCalibPixels] = useState<number | null>(null)
+  const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null)
 
   const handleZoom = (delta: number) => {
-    setZoom(prev => Math.min(400, Math.max(10, prev + delta)))
+    setZoom(prev => Math.min(500, Math.max(10, prev + delta)))
   }
 
   const handleCreateProject = (name: string) => {
@@ -77,66 +88,38 @@ function App() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? null
 
-  // Called when user confirms perimeter modal (create new group or use existing)
   const handlePerimeterConfirm = useCallback((
     data: Omit<PerimeterGroup, 'id' | 'paths' | 'totalLength'> & { existingGroupId?: string }
   ) => {
     let groupId: string
-
     if (data.existingGroupId) {
-      // Use existing group
       groupId = data.existingGroupId
     } else {
-      // Create new group
       groupId = crypto.randomUUID()
-      const newGroup: PerimeterGroup = {
-        id: groupId,
-        name: data.name,
-        color: data.color,
-        thickness: data.thickness,
-        height: data.height,
-        width: data.width,
-        paths: [],
-        totalLength: 0,
-      }
-      setPerimeterGroups(prev => [...prev, newGroup])
+      setPerimeterGroups(prev => [...prev, {
+        id: groupId, name: data.name, color: data.color, thickness: data.thickness,
+        height: data.height, width: data.width, paths: [], totalLength: 0,
+      }])
     }
-
-    // Enter drawing mode
     const group = data.existingGroupId
       ? perimeterGroups.find(g => g.id === data.existingGroupId)
       : { color: data.color, thickness: data.thickness }
-
-    setDrawingState({
-      groupId,
-      color: group?.color ?? data.color,
-      thickness: group?.thickness ?? data.thickness,
-    })
+    setDrawingState({ groupId, color: group?.color ?? data.color, thickness: group?.thickness ?? data.thickness })
     setShowPerimeterModal(false)
     setActiveTool('perimetre')
   }, [perimeterGroups])
 
-  // Enter drawing mode for existing group directly (from dropdown)
   const handleStartDrawingForGroup = useCallback((group: PerimeterGroup) => {
-    setDrawingState({
-      groupId: group.id,
-      color: group.color,
-      thickness: group.thickness,
-    })
+    setDrawingState({ groupId: group.id, color: group.color, thickness: group.thickness })
     setActiveTool('perimetre')
   }, [])
 
-  // Called when a path is finished in the canvas
   const handlePathFinished = useCallback((groupId: string, path: PerimeterPath) => {
-    setPerimeterGroups(prev =>
-      prev.map(g => {
-        if (g.id !== groupId) return g
-        const updatedPaths = [...g.paths, path]
-        const totalLength = updatedPaths.reduce((sum, p) => sum + p.length, 0)
-        return { ...g, paths: updatedPaths, totalLength }
-      })
-    )
-    // Keep drawing state so user can add more paths to same group
+    setPerimeterGroups(prev => prev.map(g => {
+      if (g.id !== groupId) return g
+      const updatedPaths = [...g.paths, path]
+      return { ...g, paths: updatedPaths, totalLength: updatedPaths.reduce((s, p) => s + p.length, 0) }
+    }))
   }, [])
 
   const handleCancelDrawing = useCallback(() => {
@@ -144,9 +127,42 @@ function App() {
     setActiveTool('pointer')
   }, [])
 
-  // When perimetre tool button clicked
-  const handlePerimetreToolClick = () => {
-    setShowPerimeterModal(true)
+  const handleCalibrateClick = () => {
+    setCalibrationMode(true)
+    setDrawingState(null)
+  }
+
+  const handleCalibrationLine = useCallback((pixelLength: number) => {
+    setPendingCalibPixels(pixelLength)
+    setCalibrationMode(false)
+  }, [])
+
+  const handleCalibrationConfirm = (pixelsPerUnit: number, unit: string) => {
+    setCalibration({ pixelsPerUnit, unit })
+    setPendingCalibPixels(null)
+  }
+
+  const handleCancelCalibration = useCallback(() => {
+    setCalibrationMode(false)
+    setPendingCalibPixels(null)
+  }, [])
+
+  const handleExportExcel = () => {
+    const rows = perimeterGroups.map(g => ({
+      Nom: g.name,
+      Couleur: g.color,
+      Longueur: calibration
+        ? `${(g.totalLength / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
+        : `${Math.round(g.totalLength)} px`,
+      Epaisseur: g.thickness,
+      Hauteur: g.height !== undefined ? `${g.height} m` : '',
+      Largeur: g.width !== undefined ? `${g.width} m` : '',
+      'Nb traces': g.paths.length,
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Groupes')
+    XLSX.writeFile(wb, `kutch-export-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
   if (!project) {
@@ -170,12 +186,21 @@ function App() {
         onZoomOut={() => handleZoom(-10)}
         onZoomFit={() => setZoom(100)}
         onImportPdf={handleImportPdf}
-        onPerimetreClick={handlePerimetreToolClick}
+        onPerimetreClick={() => setShowPerimeterModal(true)}
         onStartDrawingForGroup={handleStartDrawingForGroup}
         perimeterGroups={perimeterGroups}
+        calibrationMode={calibrationMode}
+        onCalibrateClick={handleCalibrateClick}
+        onExportExcel={handleExportExcel}
       />
       <div className="flex flex-1 overflow-hidden">
-        <LeftSidebar activeLayer={activeLayer} />
+        <LeftSidebar
+          activeLayer={activeLayer}
+          selectedElement={selectedElement}
+          perimeterGroups={perimeterGroups}
+          activePlan={activePlan}
+          calibration={calibration}
+        />
         <MainCanvas
           activeTool={activeTool}
           zoom={zoom}
@@ -185,6 +210,11 @@ function App() {
           onPathFinished={handlePathFinished}
           onCancelDrawing={handleCancelDrawing}
           perimeterGroups={perimeterGroups}
+          calibrationMode={calibrationMode}
+          onCalibrationLine={handleCalibrationLine}
+          onCancelCalibration={handleCancelCalibration}
+          onSelectElement={setSelectedElement}
+          selectedElement={selectedElement}
         />
         <RightSidebar
           plans={plans}
@@ -192,6 +222,7 @@ function App() {
           onSelectPlan={p => setActivePlanId(p.id)}
           onOpenAllPlans={() => setShowAllPlans(true)}
           perimeterGroups={perimeterGroups}
+          calibration={calibration}
         />
       </div>
 
@@ -205,12 +236,18 @@ function App() {
           onImportPdf={handleImportPdf}
         />
       )}
-
       {showPerimeterModal && (
         <PerimeterModal
           groups={perimeterGroups}
           onConfirm={handlePerimeterConfirm}
           onClose={() => setShowPerimeterModal(false)}
+        />
+      )}
+      {pendingCalibPixels !== null && (
+        <CalibrationModal
+          pixelLength={pendingCalibPixels}
+          onConfirm={handleCalibrationConfirm}
+          onCancel={() => setPendingCalibPixels(null)}
         />
       )}
     </div>

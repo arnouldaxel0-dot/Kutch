@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, CSSProperties } from 'react'
 
 interface PanelProps {
   title: string
@@ -6,6 +6,7 @@ interface PanelProps {
   actions?: ReactNode
   className?: string
   contentClassName?: string
+  style?: CSSProperties
 }
 
 export default function Panel({
@@ -14,9 +15,10 @@ export default function Panel({
   actions,
   className = '',
   contentClassName = '',
+  style,
 }: PanelProps) {
   return (
-    <div className={`flex flex-col border-b border-slate-700 ${className}`}>
+    <div className={`flex flex-col border-b border-slate-700 ${className}`} style={style}>
       <div className="panel-header">
         <span>{title}</span>
         {actions && <div className="flex items-center gap-1">{actions}</div>}

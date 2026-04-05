@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { Tool } from '../App'
-import type { Plan, PerimeterGroup, PerimeterPath, Point } from '../types'
+import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement } from '../types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -23,18 +23,11 @@ interface MainCanvasProps {
   onPathFinished: (groupId: string, path: PerimeterPath) => void
   onCancelDrawing: () => void
   perimeterGroups: PerimeterGroup[]
-}
-
-const TOOL_CURSORS: Record<Tool, string> = {
-  pointer: 'default',
-  cadrage: 'crosshair',
-  surface: 'crosshair',
-  perimetre: 'crosshair',
-  distance: 'crosshair',
-  compteur: 'cell',
-  angle: 'crosshair',
-  marquer: 'crosshair',
-  note: 'text',
+  calibrationMode: boolean
+  onCalibrationLine: (length: number) => void
+  onCancelCalibration: () => void
+  onSelectElement: (element: SelectedElement | null) => void
+  selectedElement: SelectedElement | null
 }
 
 const calcLength = (points: Point[]) =>
@@ -53,6 +46,11 @@ export default function MainCanvas({
   onPathFinished,
   onCancelDrawing,
   perimeterGroups,
+  calibrationMode,
+  onCalibrationLine,
+  onCancelCalibration,
+  onSelectElement,
+  selectedElement,
 }: MainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -61,6 +59,7 @@ export default function MainCanvas({
   const [pdfSize, setPdfSize] = useState({ width: 800, height: 566 })
   const [currentPoints, setCurrentPoints] = useState<Point[]>([])
   const [mousePos, setMousePos] = useState<Point | null>(null)
+  const [calibPoints, setCalibPoints] = useState<Point[]>([])
   const isPanning = useRef(false)
   const lastPanPoint = useRef({ x: 0, y: 0 })
   const panRef = useRef(pan)
@@ -122,7 +121,14 @@ export default function MainCanvas({
     setMousePos(null)
   }, [drawingState?.groupId])
 
-  // Wheel zoom with passive: false
+  // Reset calibration points when calibration mode changes
+  useEffect(() => {
+    if (!calibrationMode) {
+      setCalibPoints([])
+    }
+  }, [calibrationMode])
+
+  // Wheel zoom with passive: false — cap at 5 (= 500%)
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -152,6 +158,39 @@ export default function MainCanvas({
     }
   }, [])
 
+  // Hit-test: find path within 8px (in screen space) of click
+  const findPathAtPoint = useCallback((canvasPt: Point): { groupId: string; pathId: string } | null => {
+    const threshold = 8 / scaleRef.current
+    for (const group of perimeterGroups) {
+      for (const path of group.paths) {
+        // Check each segment of the path
+        for (let i = 0; i < path.points.length - 1; i++) {
+          const a = path.points[i]
+          const b = path.points[i + 1]
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const len2 = dx * dx + dy * dy
+          if (len2 === 0) continue
+          const t = Math.max(0, Math.min(1, ((canvasPt.x - a.x) * dx + (canvasPt.y - a.y) * dy) / len2))
+          const px = a.x + t * dx - canvasPt.x
+          const py = a.y + t * dy - canvasPt.y
+          if (px * px + py * py <= threshold * threshold) {
+            return { groupId: group.id, pathId: path.id }
+          }
+        }
+        // Also check individual points
+        for (const pt of path.points) {
+          const dx = pt.x - canvasPt.x
+          const dy = pt.y - canvasPt.y
+          if (dx * dx + dy * dy <= threshold * threshold) {
+            return { groupId: group.id, pathId: path.id }
+          }
+        }
+      }
+    }
+    return null
+  }, [perimeterGroups])
+
   const handleMouseDown = (e: React.MouseEvent) => {
     // Middle mouse button → start pan
     if (e.button === 1) {
@@ -161,10 +200,42 @@ export default function MainCanvas({
       return
     }
 
-    // Left click in perimeter drawing mode
-    if (e.button === 0 && drawingState) {
-      const pt = screenToCanvas(e.clientX, e.clientY)
-      setCurrentPoints(prev => [...prev, pt])
+    // Left click
+    if (e.button === 0) {
+      // Calibration mode
+      if (calibrationMode) {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        setCalibPoints(prev => {
+          const next = [...prev, pt]
+          if (next.length === 2) {
+            const dx = next[1].x - next[0].x
+            const dy = next[1].y - next[0].y
+            const len = Math.sqrt(dx * dx + dy * dy)
+            onCalibrationLine(len)
+            return []
+          }
+          return next
+        })
+        return
+      }
+
+      // Drawing mode
+      if (drawingState) {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        setCurrentPoints(prev => [...prev, pt])
+        return
+      }
+
+      // Pointer/selection mode
+      if (activeTool === 'pointer') {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        const hit = findPathAtPoint(pt)
+        if (hit) {
+          onSelectElement({ type: 'perimeter', groupId: hit.groupId, pathId: hit.pathId })
+        } else {
+          onSelectElement(null)
+        }
+      }
     }
   }
 
@@ -177,7 +248,7 @@ export default function MainCanvas({
       return
     }
 
-    if (drawingState) {
+    if (drawingState || calibrationMode) {
       setMousePos(screenToCanvas(e.clientX, e.clientY))
     }
   }
@@ -224,18 +295,23 @@ export default function MainCanvas({
     setMousePos(null)
   }
 
-  // Escape → cancel drawing
+  // Escape → cancel drawing or calibration
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && drawingState) {
-        setCurrentPoints([])
-        setMousePos(null)
-        onCancelDrawing()
+      if (e.key === 'Escape') {
+        if (calibrationMode) {
+          setCalibPoints([])
+          onCancelCalibration()
+        } else if (drawingState) {
+          setCurrentPoints([])
+          setMousePos(null)
+          onCancelDrawing()
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawingState, onCancelDrawing])
+  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration])
 
   const isDrawing = !!drawingState
 
@@ -245,7 +321,36 @@ export default function MainCanvas({
     return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
   }
 
-  const cursor = isDrawing ? 'crosshair' : TOOL_CURSORS[activeTool]
+  // Determine cursor
+  let cursor = 'default'
+  if (calibrationMode) {
+    cursor = 'crosshair'
+  } else if (isDrawing) {
+    cursor = 'crosshair'
+  } else if (activeTool === 'pointer') {
+    cursor = 'default'
+  } else {
+    const TOOL_CURSORS: Record<string, string> = {
+      pointer: 'default',
+      cadrage: 'crosshair',
+      surface: 'crosshair',
+      perimetre: 'crosshair',
+      distance: 'crosshair',
+      compteur: 'cell',
+      angle: 'crosshair',
+      marquer: 'crosshair',
+      note: 'text',
+    }
+    cursor = TOOL_CURSORS[activeTool] ?? 'default'
+  }
+
+  // Get selected path info for rendering
+  const selectedGroup = selectedElement
+    ? perimeterGroups.find(g => g.id === selectedElement.groupId)
+    : null
+  const selectedPath = selectedGroup
+    ? selectedGroup.paths.find(p => p.id === selectedElement!.pathId)
+    : null
 
   return (
     <div
@@ -265,7 +370,7 @@ export default function MainCanvas({
       </div>
 
       {/* Drawing mode indicator */}
-      {isDrawing && (
+      {isDrawing && !calibrationMode && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 bg-blue-600/90 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none">
           <span
             className="w-2 h-2 rounded-full animate-pulse"
@@ -275,10 +380,26 @@ export default function MainCanvas({
         </div>
       )}
 
-      {/* Canvas area with blue border when drawing */}
+      {/* Calibration mode indicator */}
+      {calibrationMode && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 bg-amber-600/90 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
+          {calibPoints.length === 0
+            ? 'Calibration: cliquez sur le premier point'
+            : 'Calibration: cliquez sur le deuxième point · Échap: annuler'}
+        </div>
+      )}
+
+      {/* Canvas area with colored border when drawing/calibrating */}
       <div
         ref={containerRef}
-        className={`flex-1 overflow-hidden relative ${isDrawing ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+        className={`flex-1 overflow-hidden relative ${
+          calibrationMode
+            ? 'ring-2 ring-amber-500 ring-inset'
+            : isDrawing
+            ? 'ring-2 ring-blue-500 ring-inset'
+            : ''
+        }`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -346,17 +467,34 @@ export default function MainCanvas({
           >
             {/* Existing finished paths from all groups */}
             {perimeterGroups.map(group =>
-              group.paths.map(path => (
-                <path
-                  key={path.id}
-                  d={buildPathD(path.points)}
-                  fill="none"
-                  stroke={group.color}
-                  strokeWidth={group.thickness}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ))
+              group.paths.map(path => {
+                const isSelected =
+                  selectedElement?.groupId === group.id &&
+                  selectedElement?.pathId === path.id
+                return (
+                  <g key={path.id}>
+                    {/* White outline for selected path */}
+                    {isSelected && (
+                      <path
+                        d={buildPathD(path.points)}
+                        fill="none"
+                        stroke="white"
+                        strokeWidth={(group.thickness + 4) / scale}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    <path
+                      d={buildPathD(path.points)}
+                      fill="none"
+                      stroke={group.color}
+                      strokeWidth={isSelected ? (group.thickness + 2) / scale : group.thickness / scale}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                )
+              })
             )}
 
             {/* Dot markers for existing paths */}
@@ -376,13 +514,30 @@ export default function MainCanvas({
               )
             )}
 
+            {/* Selection handles (larger dots at endpoints) */}
+            {selectedPath && selectedGroup && (
+              <>
+                {selectedPath.points.map((pt, i) => (
+                  <circle
+                    key={`sel-handle-${i}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={6 / scale}
+                    fill={selectedGroup.color}
+                    stroke="white"
+                    strokeWidth={2 / scale}
+                  />
+                ))}
+              </>
+            )}
+
             {/* Current drawing path */}
             {drawingState && currentPoints.length >= 2 && (
               <path
                 d={buildPathD(currentPoints)}
                 fill="none"
                 stroke={drawingState.color}
-                strokeWidth={drawingState.thickness}
+                strokeWidth={drawingState.thickness / scale}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -396,7 +551,7 @@ export default function MainCanvas({
                 x2={mousePos.x}
                 y2={mousePos.y}
                 stroke={drawingState.color}
-                strokeWidth={drawingState.thickness}
+                strokeWidth={drawingState.thickness / scale}
                 strokeDasharray={`${6 / scale},${4 / scale}`}
                 strokeLinecap="round"
                 opacity={0.7}
@@ -415,6 +570,36 @@ export default function MainCanvas({
                 strokeWidth={1.5 / scale}
               />
             ))}
+
+            {/* Calibration points and line */}
+            {calibrationMode && calibPoints.length >= 1 && (
+              <>
+                {calibPoints.length === 1 && mousePos && (
+                  <line
+                    x1={calibPoints[0].x}
+                    y1={calibPoints[0].y}
+                    x2={mousePos.x}
+                    y2={mousePos.y}
+                    stroke="#f59e0b"
+                    strokeWidth={2 / scale}
+                    strokeDasharray={`${8 / scale},${5 / scale}`}
+                    strokeLinecap="round"
+                    opacity={0.9}
+                  />
+                )}
+                {calibPoints.map((pt, i) => (
+                  <circle
+                    key={`calib-${i}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={5 / scale}
+                    fill="#f59e0b"
+                    stroke="white"
+                    strokeWidth={2 / scale}
+                  />
+                ))}
+              </>
+            )}
           </svg>
         </div>
       </div>
@@ -422,9 +607,10 @@ export default function MainCanvas({
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1 bg-slate-800/60 border-t border-slate-700 shrink-0 text-xs text-slate-500">
         <div className="flex items-center gap-4">
-          <span>Outil: <span className="text-slate-300 capitalize">{activeTool}</span></span>
+          <span>Outil: <span className="text-slate-300 capitalize">{calibrationMode ? 'calibration' : activeTool}</span></span>
           <span>Calque: <span className="text-slate-300">Calque par défaut</span></span>
-          {isDrawing && <span className="text-blue-400">Points: {currentPoints.length}</span>}
+          {isDrawing && !calibrationMode && <span className="text-blue-400">Points: {currentPoints.length}</span>}
+          {calibrationMode && <span className="text-amber-400">Points calibration: {calibPoints.length}/2</span>}
         </div>
         <div className="flex items-center gap-4">
           <span>Roulette: zoom · Molette centrale: panoramique</span>

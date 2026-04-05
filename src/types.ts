@@ -23,3 +23,9 @@ export interface Plan {
   importedAt: string
   file?: File
 }
+
+export interface SelectedElement {
+  type: 'perimeter'
+  groupId: string
+  pathId: string
+}
