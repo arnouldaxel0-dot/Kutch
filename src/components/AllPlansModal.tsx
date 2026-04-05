@@ -1,10 +1,7 @@
 import { X, FileText, Upload } from 'lucide-react'
+import type { Plan } from '../types'
 
-export interface Plan {
-  id: string
-  name: string
-  importedAt: string
-}
+export type { Plan }
 
 interface AllPlansModalProps {
   projectName: string

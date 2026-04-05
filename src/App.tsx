@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import Toolbar from './components/Toolbar'
 import LeftSidebar from './components/LeftSidebar'
 import MainCanvas from './components/MainCanvas'
 import RightSidebar from './components/RightSidebar'
 import StartupMenu from './components/StartupMenu'
 import AllPlansModal from './components/AllPlansModal'
+import PerimeterModal from './components/PerimeterModal'
 import type { Project } from './components/StartupMenu'
-import type { Plan } from './components/AllPlansModal'
+import type { Plan, PerimeterGroup, PerimeterPath } from './types'
 
 export type Tool =
   | 'pointer'
@@ -19,6 +20,12 @@ export type Tool =
   | 'marquer'
   | 'note'
 
+interface DrawingState {
+  groupId: string
+  color: string
+  thickness: number
+}
+
 function App() {
   const [project, setProject] = useState<Project | null>(null)
   const [activeTool, setActiveTool] = useState<Tool>('pointer')
@@ -28,6 +35,9 @@ function App() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [activePlanId, setActivePlanId] = useState<string | null>(null)
   const [showAllPlans, setShowAllPlans] = useState(false)
+  const [perimeterGroups, setPerimeterGroups] = useState<PerimeterGroup[]>([])
+  const [showPerimeterModal, setShowPerimeterModal] = useState(false)
+  const [drawingState, setDrawingState] = useState<DrawingState | null>(null)
 
   const handleZoom = (delta: number) => {
     setZoom(prev => Math.min(400, Math.max(10, prev + delta)))
@@ -54,6 +64,7 @@ function App() {
         id: crypto.randomUUID(),
         name: file.name.replace(/\.pdf$/i, ''),
         importedAt: new Date().toLocaleDateString('fr-FR'),
+        file,
       }))
       setPlans(prev => {
         const updated = [...prev, ...newPlans]
@@ -65,6 +76,78 @@ function App() {
   }
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? null
+
+  // Called when user confirms perimeter modal (create new group or use existing)
+  const handlePerimeterConfirm = useCallback((
+    data: Omit<PerimeterGroup, 'id' | 'paths' | 'totalLength'> & { existingGroupId?: string }
+  ) => {
+    let groupId: string
+
+    if (data.existingGroupId) {
+      // Use existing group
+      groupId = data.existingGroupId
+    } else {
+      // Create new group
+      groupId = crypto.randomUUID()
+      const newGroup: PerimeterGroup = {
+        id: groupId,
+        name: data.name,
+        color: data.color,
+        thickness: data.thickness,
+        height: data.height,
+        width: data.width,
+        paths: [],
+        totalLength: 0,
+      }
+      setPerimeterGroups(prev => [...prev, newGroup])
+    }
+
+    // Enter drawing mode
+    const group = data.existingGroupId
+      ? perimeterGroups.find(g => g.id === data.existingGroupId)
+      : { color: data.color, thickness: data.thickness }
+
+    setDrawingState({
+      groupId,
+      color: group?.color ?? data.color,
+      thickness: group?.thickness ?? data.thickness,
+    })
+    setShowPerimeterModal(false)
+    setActiveTool('perimetre')
+  }, [perimeterGroups])
+
+  // Enter drawing mode for existing group directly (from dropdown)
+  const handleStartDrawingForGroup = useCallback((group: PerimeterGroup) => {
+    setDrawingState({
+      groupId: group.id,
+      color: group.color,
+      thickness: group.thickness,
+    })
+    setActiveTool('perimetre')
+  }, [])
+
+  // Called when a path is finished in the canvas
+  const handlePathFinished = useCallback((groupId: string, path: PerimeterPath) => {
+    setPerimeterGroups(prev =>
+      prev.map(g => {
+        if (g.id !== groupId) return g
+        const updatedPaths = [...g.paths, path]
+        const totalLength = updatedPaths.reduce((sum, p) => sum + p.length, 0)
+        return { ...g, paths: updatedPaths, totalLength }
+      })
+    )
+    // Keep drawing state so user can add more paths to same group
+  }, [])
+
+  const handleCancelDrawing = useCallback(() => {
+    setDrawingState(null)
+    setActiveTool('pointer')
+  }, [])
+
+  // When perimetre tool button clicked
+  const handlePerimetreToolClick = () => {
+    setShowPerimeterModal(true)
+  }
 
   if (!project) {
     return (
@@ -87,20 +170,28 @@ function App() {
         onZoomOut={() => handleZoom(-10)}
         onZoomFit={() => setZoom(100)}
         onImportPdf={handleImportPdf}
+        onPerimetreClick={handlePerimetreToolClick}
+        onStartDrawingForGroup={handleStartDrawingForGroup}
+        perimeterGroups={perimeterGroups}
       />
       <div className="flex flex-1 overflow-hidden">
         <LeftSidebar activeLayer={activeLayer} />
         <MainCanvas
           activeTool={activeTool}
           zoom={zoom}
-          activePlan={activePlan?.name ?? null}
+          activePlan={activePlan}
           projectName={project.name}
+          drawingState={drawingState}
+          onPathFinished={handlePathFinished}
+          onCancelDrawing={handleCancelDrawing}
+          perimeterGroups={perimeterGroups}
         />
         <RightSidebar
           plans={plans}
           activePlanId={activePlanId}
           onSelectPlan={p => setActivePlanId(p.id)}
           onOpenAllPlans={() => setShowAllPlans(true)}
+          perimeterGroups={perimeterGroups}
         />
       </div>
 
@@ -112,6 +203,14 @@ function App() {
           onSelectPlan={p => setActivePlanId(p.id)}
           onClose={() => setShowAllPlans(false)}
           onImportPdf={handleImportPdf}
+        />
+      )}
+
+      {showPerimeterModal && (
+        <PerimeterModal
+          groups={perimeterGroups}
+          onConfirm={handlePerimeterConfirm}
+          onClose={() => setShowPerimeterModal(false)}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { FileText, LayoutGrid } from 'lucide-react'
-import type { Plan } from '../AllPlansModal'
+import type { Plan } from '../../types'
 
 interface RecentPlansPanelProps {
   plans: Plan[]

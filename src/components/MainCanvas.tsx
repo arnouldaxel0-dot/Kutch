@@ -1,10 +1,28 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
+import * as pdfjsLib from 'pdfjs-dist'
 import type { Tool } from '../App'
+import type { Plan, PerimeterGroup, PerimeterPath, Point } from '../types'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).href
+
+interface DrawingState {
+  groupId: string
+  color: string
+  thickness: number
+}
 
 interface MainCanvasProps {
   activeTool: Tool
   zoom: number
-  activePlan: string | null
+  activePlan: Plan | null
   projectName?: string
+  drawingState: DrawingState | null
+  onPathFinished: (groupId: string, path: PerimeterPath) => void
+  onCancelDrawing: () => void
+  perimeterGroups: PerimeterGroup[]
 }
 
 const TOOL_CURSORS: Record<Tool, string> = {
@@ -19,26 +37,233 @@ const TOOL_CURSORS: Record<Tool, string> = {
   note: 'text',
 }
 
-export default function MainCanvas({ activeTool, zoom, activePlan, projectName }: MainCanvasProps) {
+const calcLength = (points: Point[]) =>
+  points.slice(1).reduce((sum, p, i) => {
+    const dx = p.x - points[i].x
+    const dy = p.y - points[i].y
+    return sum + Math.sqrt(dx * dx + dy * dy)
+  }, 0)
+
+export default function MainCanvas({
+  activeTool,
+  zoom: _zoom,
+  activePlan,
+  projectName,
+  drawingState,
+  onPathFinished,
+  onCancelDrawing,
+  perimeterGroups,
+}: MainCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [scale, setScale] = useState(1)
+  const [pdfSize, setPdfSize] = useState({ width: 800, height: 566 })
+  const [currentPoints, setCurrentPoints] = useState<Point[]>([])
+  const [mousePos, setMousePos] = useState<Point | null>(null)
+  const isPanning = useRef(false)
+  const lastPanPoint = useRef({ x: 0, y: 0 })
+  const panRef = useRef(pan)
+  const scaleRef = useRef(scale)
+
+  // Keep refs in sync
+  useEffect(() => { panRef.current = pan }, [pan])
+  useEffect(() => { scaleRef.current = scale }, [scale])
+
+  // Render PDF when activePlan changes
+  useEffect(() => {
+    if (!activePlan?.file || !pdfCanvasRef.current) return
+
+    let cancelled = false
+    const file = activePlan.file
+
+    const renderPdf = async () => {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        if (cancelled) return
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        if (cancelled) return
+        const page = await pdf.getPage(1)
+        if (cancelled) return
+
+        const viewport = page.getViewport({ scale: 2 })
+        const canvas = pdfCanvasRef.current!
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        setPdfSize({ width: viewport.width, height: viewport.height })
+
+        const ctx = canvas.getContext('2d')!
+        await page.render({ canvasContext: ctx, viewport, canvas }).promise
+      } catch (err) {
+        console.error('PDF render error:', err)
+      }
+    }
+
+    renderPdf()
+    return () => { cancelled = true }
+  }, [activePlan?.file, activePlan?.id])
+
+  // Reset drawing points when drawingState changes (new drawing session)
+  useEffect(() => {
+    setCurrentPoints([])
+    setMousePos(null)
+  }, [drawingState?.groupId])
+
+  // Wheel zoom with passive: false
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+      const rect = container.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      setPan(prev => ({
+        x: mouseX - (mouseX - prev.x) * factor,
+        y: mouseY - (mouseY - prev.y) * factor,
+      }))
+      setScale(prev => Math.min(5, Math.max(0.1, prev * factor)))
+    }
+
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    return () => container.removeEventListener('wheel', handleWheel)
+  }, [])
+
+  const screenToCanvas = useCallback((clientX: number, clientY: number): Point => {
+    const rect = containerRef.current!.getBoundingClientRect()
+    return {
+      x: (clientX - rect.left - panRef.current.x) / scaleRef.current,
+      y: (clientY - rect.top - panRef.current.y) / scaleRef.current,
+    }
+  }, [])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Middle mouse button → start pan
+    if (e.button === 1) {
+      e.preventDefault()
+      isPanning.current = true
+      lastPanPoint.current = { x: e.clientX, y: e.clientY }
+      return
+    }
+
+    // Left click in perimeter drawing mode
+    if (e.button === 0 && drawingState) {
+      const pt = screenToCanvas(e.clientX, e.clientY)
+      setCurrentPoints(prev => [...prev, pt])
+    }
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current) {
+      const dx = e.clientX - lastPanPoint.current.x
+      const dy = e.clientY - lastPanPoint.current.y
+      lastPanPoint.current = { x: e.clientX, y: e.clientY }
+      setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }))
+      return
+    }
+
+    if (drawingState) {
+      setMousePos(screenToCanvas(e.clientX, e.clientY))
+    }
+  }
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      isPanning.current = false
+    }
+  }
+
+  const handleMouseLeave = () => {
+    isPanning.current = false
+    setMousePos(null)
+  }
+
+  // Right-click → finish path
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!drawingState || currentPoints.length < 2) {
+      if (drawingState && currentPoints.length < 2) {
+        // Not enough points, just cancel
+        setCurrentPoints([])
+        return
+      }
+      return
+    }
+    const length = calcLength(currentPoints)
+    const path: PerimeterPath = {
+      id: crypto.randomUUID(),
+      points: [...currentPoints],
+      length,
+    }
+    onPathFinished(drawingState.groupId, path)
+    setCurrentPoints([])
+    setMousePos(null)
+  }
+
+  // Escape → cancel drawing
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && drawingState) {
+        setCurrentPoints([])
+        setMousePos(null)
+        onCancelDrawing()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [drawingState, onCancelDrawing])
+
+  const isDrawing = !!drawingState
+
+  // Build SVG path string from points
+  const buildPathD = (points: Point[]) => {
+    if (points.length < 2) return ''
+    return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+  }
+
+  const cursor = isDrawing ? 'crosshair' : TOOL_CURSORS[activeTool]
+
   return (
     <div
       className="flex-1 relative bg-slate-950 overflow-hidden flex flex-col"
-      style={{ cursor: TOOL_CURSORS[activeTool] }}
+      style={{ cursor }}
     >
       {/* Plan title bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-800/80 border-b border-slate-700 shrink-0 backdrop-blur-sm">
         <span className="text-sm font-medium text-slate-200">
-          {activePlan ?? <span className="text-slate-500 italic">Aucun plan ouvert</span>}
+          {activePlan ? activePlan.name : <span className="text-slate-500 italic">Aucun plan ouvert</span>}
         </span>
         <div className="flex items-center gap-3 text-xs text-slate-500">
           {projectName && <span>{projectName}</span>}
           <span className="text-slate-600">|</span>
-          <span>{zoom}%</span>
+          <span>{Math.round(scale * 100)}%</span>
         </div>
       </div>
 
-      {/* Canvas area */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-8">
+      {/* Drawing mode indicator */}
+      {isDrawing && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 bg-blue-600/90 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none">
+          <span
+            className="w-2 h-2 rounded-full animate-pulse"
+            style={{ backgroundColor: drawingState.color }}
+          />
+          Mode dessin actif — Clic gauche: ajouter point · Clic droit: terminer · Échap: annuler
+        </div>
+      )}
+
+      {/* Canvas area with blue border when drawing */}
+      <div
+        ref={containerRef}
+        className={`flex-1 overflow-hidden relative ${isDrawing ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onContextMenu={handleContextMenu}
+      >
+        {/* Empty state */}
         {!activePlan && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none z-10">
             <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center">
@@ -54,126 +279,120 @@ export default function MainCanvas({ activeTool, zoom, activePlan, projectName }
           </div>
         )}
 
+        {/* Transformed content */}
         <div
-          className="relative bg-white shadow-2xl shadow-black/50"
           style={{
-            width: `${8.27 * zoom * 1.2}px`,
-            height: `${5.83 * zoom * 1.2}px`,
-            minWidth: '400px',
-            minHeight: '280px',
-            transform: `scale(${zoom / 100})`,
-            transformOrigin: 'center center',
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+            transformOrigin: '0 0',
+            position: 'absolute',
+            top: 0,
+            left: 0,
           }}
         >
-          {/* Floor plan SVG */}
+          {/* PDF canvas */}
+          <canvas
+            ref={pdfCanvasRef}
+            style={{
+              display: activePlan ? 'block' : 'none',
+              width: pdfSize.width / 2,
+              height: pdfSize.height / 2,
+              imageRendering: 'pixelated',
+            }}
+          />
+
+          {/* Fallback placeholder when no PDF file but plan exists (unlikely) */}
+          {activePlan && !activePlan.file && (
+            <div
+              className="bg-white flex items-center justify-center text-slate-400 text-sm"
+              style={{ width: 800, height: 566 }}
+            >
+              Plan sans fichier PDF
+            </div>
+          )}
+
+          {/* SVG overlay for drawing */}
           <svg
-            viewBox="0 0 800 566"
-            className="w-full h-full"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: activePlan ? pdfSize.width / 2 : 800,
+              height: activePlan ? pdfSize.height / 2 : 566,
+              overflow: 'visible',
+            }}
             xmlns="http://www.w3.org/2000/svg"
           >
-            <defs>
-              <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="0.3" />
-              </pattern>
-              <pattern id="gridMajor" width="100" height="100" patternUnits="userSpaceOnUse">
-                <rect width="100" height="100" fill="url(#grid)" />
-                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#d1d5db" strokeWidth="0.5" />
-              </pattern>
-            </defs>
+            {/* Existing finished paths from all groups */}
+            {perimeterGroups.map(group =>
+              group.paths.map(path => (
+                <path
+                  key={path.id}
+                  d={buildPathD(path.points)}
+                  fill="none"
+                  stroke={group.color}
+                  strokeWidth={group.thickness}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))
+            )}
 
-            {/* Background */}
-            <rect width="800" height="566" fill="white" />
-            <rect width="800" height="566" fill="url(#gridMajor)" />
+            {/* Dot markers for existing paths */}
+            {perimeterGroups.map(group =>
+              group.paths.map(path =>
+                path.points.map((pt, i) => (
+                  <circle
+                    key={`${path.id}-${i}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={3 / scale}
+                    fill={group.color}
+                    stroke="white"
+                    strokeWidth={1 / scale}
+                  />
+                ))
+              )
+            )}
 
-            {/* Outer building boundary */}
-            <rect x="50" y="50" width="700" height="466" fill="none" stroke="#1f2937" strokeWidth="3" />
+            {/* Current drawing path */}
+            {drawingState && currentPoints.length >= 2 && (
+              <path
+                d={buildPathD(currentPoints)}
+                fill="none"
+                stroke={drawingState.color}
+                strokeWidth={drawingState.thickness}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
 
-            {/* Main rooms */}
-            {/* Room 1 - top left large */}
-            <rect x="50" y="50" width="280" height="200" fill="rgba(99,102,241,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 2 - top center */}
-            <rect x="330" y="50" width="200" height="150" fill="rgba(16,185,129,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 3 - top right */}
-            <rect x="530" y="50" width="220" height="200" fill="rgba(245,158,11,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 4 - middle */}
-            <rect x="50" y="250" width="180" height="130" fill="rgba(239,68,68,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 5 - center large */}
-            <rect x="230" y="200" width="340" height="200" fill="rgba(139,92,246,0.04)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 6 - right middle */}
-            <rect x="570" y="250" width="180" height="130" fill="rgba(20,184,166,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 7 - bottom left */}
-            <rect x="50" y="380" width="280" height="136" fill="rgba(249,115,22,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Room 8 - bottom right */}
-            <rect x="330" y="400" width="420" height="116" fill="rgba(236,72,153,0.03)" stroke="#374151" strokeWidth="1.5" />
-            {/* Corridor */}
-            <rect x="230" y="50" width="100" height="466" fill="rgba(0,0,0,0.02)" stroke="#9ca3af" strokeWidth="0.8" strokeDasharray="4,2" />
+            {/* Preview line to cursor */}
+            {drawingState && currentPoints.length >= 1 && mousePos && (
+              <line
+                x1={currentPoints[currentPoints.length - 1].x}
+                y1={currentPoints[currentPoints.length - 1].y}
+                x2={mousePos.x}
+                y2={mousePos.y}
+                stroke={drawingState.color}
+                strokeWidth={drawingState.thickness}
+                strokeDasharray={`${6 / scale},${4 / scale}`}
+                strokeLinecap="round"
+                opacity={0.7}
+              />
+            )}
 
-            {/* Doors */}
-            <path d="M 50 180 Q 65 180 65 195" fill="none" stroke="#6b7280" strokeWidth="1.2" />
-            <line x1="50" y1="180" x2="50" y2="195" stroke="#6b7280" strokeWidth="1.2" />
-            <path d="M 328 130 Q 328 115 313 115" fill="none" stroke="#6b7280" strokeWidth="1.2" />
-            <line x1="328" y1="115" x2="328" y2="130" stroke="#6b7280" strokeWidth="1.2" />
-            <path d="M 570 320 Q 555 320 555 335" fill="none" stroke="#6b7280" strokeWidth="1.2" />
-            <line x1="555" y1="320" x2="570" y2="320" stroke="#6b7280" strokeWidth="1.2" />
-
-            {/* Windows */}
-            <rect x="100" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
-            <line x1="100" y1="50.5" x2="160" y2="50.5" stroke="#374151" strokeWidth="0.6" />
-            <rect x="380" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
-            <line x1="380" y1="50.5" x2="440" y2="50.5" stroke="#374151" strokeWidth="0.6" />
-            <rect x="600" y="48" width="60" height="5" fill="white" stroke="#374151" strokeWidth="1" />
-            <line x1="600" y1="50.5" x2="660" y2="50.5" stroke="#374151" strokeWidth="0.6" />
-            <rect x="745" y="130" width="5" height="60" fill="white" stroke="#374151" strokeWidth="1" />
-            <line x1="747.5" y1="130" x2="747.5" y2="190" stroke="#374151" strokeWidth="0.6" />
-
-            {/* Dimension lines */}
-            <line x1="50" y1="530" x2="750" y2="530" stroke="#6366f1" strokeWidth="0.8" strokeDasharray="none" />
-            <line x1="50" y1="525" x2="50" y2="535" stroke="#6366f1" strokeWidth="0.8" />
-            <line x1="750" y1="525" x2="750" y2="535" stroke="#6366f1" strokeWidth="0.8" />
-            <text x="400" y="543" textAnchor="middle" fontSize="9" fill="#6366f1" fontFamily="sans-serif">149,39 m</text>
-
-            <line x1="770" y1="50" x2="770" y2="516" stroke="#6366f1" strokeWidth="0.8" />
-            <line x1="765" y1="50" x2="775" y2="50" stroke="#6366f1" strokeWidth="0.8" />
-            <line x1="765" y1="516" x2="775" y2="516" stroke="#6366f1" strokeWidth="0.8" />
-            <text x="790" y="285" textAnchor="middle" fontSize="9" fill="#6366f1" fontFamily="sans-serif" transform="rotate(90, 790, 285)">62,24 m</text>
-
-            {/* Measurement annotations */}
-            <rect x="56" y="56" width="50" height="16" rx="2" fill="rgba(99,102,241,0.15)" />
-            <text x="81" y="67" textAnchor="middle" fontSize="7" fill="#6366f1" fontFamily="sans-serif" fontWeight="600">21,69 m²</text>
-
-            <rect x="340" y="210" width="44" height="14" rx="2" fill="rgba(245,158,11,0.15)" />
-            <text x="362" y="220" textAnchor="middle" fontSize="7" fill="#d97706" fontFamily="sans-serif" fontWeight="600">18,61 m²</text>
-
-            {/* North arrow */}
-            <g transform="translate(720, 90)">
-              <circle cx="0" cy="0" r="15" fill="none" stroke="#9ca3af" strokeWidth="0.8" />
-              <path d="M 0 -12 L 4 4 L 0 0 L -4 4 Z" fill="#374151" />
-              <text x="0" y="-16" textAnchor="middle" fontSize="8" fill="#374151" fontFamily="sans-serif" fontWeight="bold">N</text>
-            </g>
-
-            {/* Legend box */}
-            <rect x="580" y="420" width="160" height="80" fill="rgba(255,255,255,0.9)" stroke="#9ca3af" strokeWidth="0.8" />
-            <text x="660" y="434" textAnchor="middle" fontSize="8" fill="#374151" fontFamily="sans-serif" fontWeight="bold">LÉGENDE</text>
-            <rect x="588" y="440" width="10" height="8" fill="rgba(99,102,241,0.15)" stroke="#6366f1" strokeWidth="0.5" />
-            <text x="602" y="448" fontSize="7" fill="#374151" fontFamily="sans-serif">Surface transfo</text>
-            <rect x="588" y="454" width="10" height="8" fill="rgba(245,158,11,0.15)" stroke="#d97706" strokeWidth="0.5" />
-            <text x="602" y="462" fontSize="7" fill="#374151" fontFamily="sans-serif">m² poly transfo</text>
-            <line x1="588" y1="468" x2="598" y2="468" stroke="#6366f1" strokeWidth="1.5" />
-            <text x="602" y="472" fontSize="7" fill="#374151" fontFamily="sans-serif">VCT / VMT</text>
-            <circle cx="593" cy="481" r="3" fill="#ef4444" />
-            <text x="602" y="484" fontSize="7" fill="#374151" fontFamily="sans-serif">Poteaux</text>
-
-            {/* Scale bar */}
-            <g transform="translate(50, 510)">
-              <line x1="0" y1="0" x2="100" y2="0" stroke="#374151" strokeWidth="1" />
-              <line x1="0" y1="-3" x2="0" y2="3" stroke="#374151" strokeWidth="1" />
-              <line x1="50" y1="-2" x2="50" y2="2" stroke="#374151" strokeWidth="0.8" />
-              <line x1="100" y1="-3" x2="100" y2="3" stroke="#374151" strokeWidth="1" />
-              <text x="0" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">0</text>
-              <text x="50" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">5m</text>
-              <text x="100" y="-6" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">10m</text>
-              <text x="50" y="10" textAnchor="middle" fontSize="6" fill="#374151" fontFamily="sans-serif">Échelle 1:100</text>
-            </g>
+            {/* Point markers for current drawing */}
+            {drawingState && currentPoints.map((pt, i) => (
+              <circle
+                key={i}
+                cx={pt.x}
+                cy={pt.y}
+                r={4 / scale}
+                fill={drawingState.color}
+                stroke="white"
+                strokeWidth={1.5 / scale}
+              />
+            ))}
           </svg>
         </div>
       </div>
@@ -183,15 +402,12 @@ export default function MainCanvas({ activeTool, zoom, activePlan, projectName }
         <div className="flex items-center gap-4">
           <span>Outil: <span className="text-slate-300 capitalize">{activeTool}</span></span>
           <span>Calque: <span className="text-slate-300">Calque par défaut</span></span>
+          {isDrawing && <span className="text-blue-400">Points: {currentPoints.length}</span>}
         </div>
         <div className="flex items-center gap-4">
-          <span>Ortho</span>
+          <span>Roulette: zoom · Molette centrale: panoramique</span>
           <span className="text-slate-600">|</span>
-          <span>Manuel</span>
-          <span className="text-slate-600">|</span>
-          <span>Qualité: Haute</span>
-          <span className="text-slate-600">|</span>
-          <span className="text-indigo-400">{zoom}%</span>
+          <span className="text-indigo-400">{Math.round(scale * 100)}%</span>
         </div>
       </div>
     </div>

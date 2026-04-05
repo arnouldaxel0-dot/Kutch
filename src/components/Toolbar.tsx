@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import {
   MousePointer2,
   Crop,
@@ -14,6 +15,7 @@ import {
   ZoomOut,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sun,
   RotateCcw,
   Printer,
@@ -23,6 +25,7 @@ import {
   FileUp,
 } from 'lucide-react'
 import type { Tool } from '../App'
+import type { PerimeterGroup } from '../types'
 import ToolbarButton from './ui/ToolbarButton'
 import Tooltip from './ui/Tooltip'
 
@@ -36,6 +39,9 @@ interface ToolbarProps {
   onZoomOut: () => void
   onZoomFit: () => void
   onImportPdf: () => void
+  onPerimetreClick: () => void
+  onStartDrawingForGroup: (group: PerimeterGroup) => void
+  perimeterGroups: PerimeterGroup[]
 }
 
 const SCALES = ['1:10', '1:20', '1:25', '1:50', '1:75', '1:100', '1:200', '1:500']
@@ -50,7 +56,26 @@ export default function Toolbar({
   onZoomOut,
   onZoomFit,
   onImportPdf,
+  onPerimetreClick,
+  onStartDrawingForGroup,
+  perimeterGroups,
 }: ToolbarProps) {
+  const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowPerimeterDropdown(false)
+      }
+    }
+    if (showPerimeterDropdown) {
+      document.addEventListener('mousedown', handleClick)
+    }
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showPerimeterDropdown])
+
   return (
     <div className="flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
       {/* Logo */}
@@ -115,12 +140,62 @@ export default function Toolbar({
         active={activeTool === 'surface'}
         onClick={() => setActiveTool('surface')}
       />
-      <ToolbarButton
-        icon={<Spline size={15} />}
-        label="Périmètre"
-        active={activeTool === 'perimetre'}
-        onClick={() => setActiveTool('perimetre')}
-      />
+
+      {/* Périmètre with dropdown arrow */}
+      <div className="relative flex items-center" ref={dropdownRef}>
+        <Tooltip text="Périmètre" position="bottom">
+          <button
+            onClick={onPerimetreClick}
+            className={`flex items-center gap-1 px-1.5 h-7 rounded-l text-xs font-medium transition-colors ${
+              activeTool === 'perimetre'
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Spline size={15} />
+            <span className="hidden sm:block text-xs">Périmètre</span>
+          </button>
+        </Tooltip>
+        <Tooltip text="Groupes existants" position="bottom">
+          <button
+            onClick={() => setShowPerimeterDropdown(v => !v)}
+            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
+              showPerimeterDropdown
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </Tooltip>
+
+        {/* Dropdown */}
+        {showPerimeterDropdown && (
+          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
+            {perimeterGroups.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe existant</div>
+            ) : (
+              perimeterGroups.map(group => (
+                <button
+                  key={group.id}
+                  onClick={() => {
+                    onStartDrawingForGroup(group)
+                    setShowPerimeterDropdown(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       <ToolbarButton
         icon={<Ruler size={15} />}
         label="Distance"
