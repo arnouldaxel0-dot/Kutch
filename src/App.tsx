@@ -7,9 +7,10 @@ import RightSidebar from './components/RightSidebar'
 import StartupMenu from './components/StartupMenu'
 import AllPlansModal from './components/AllPlansModal'
 import PerimeterModal from './components/PerimeterModal'
+import CounterModal from './components/CounterModal'
 import CalibrationModal from './components/CalibrationModal'
 import type { Project } from './components/StartupMenu'
-import type { Plan, PerimeterGroup, PerimeterPath, SelectedElement } from './types'
+import type { Plan, PerimeterGroup, PerimeterPath, SelectedElement, CounterGroup } from './types'
 
 export type Tool =
   | 'pointer'
@@ -22,10 +23,11 @@ export type Tool =
   | 'marquer'
   | 'note'
 
-interface DrawingState {
+export interface DrawingState {
   groupId: string
   color: string
   thickness: number
+  toolType: 'perimeter' | 'surface'
 }
 
 export interface Calibration {
@@ -44,14 +46,19 @@ function App() {
   const [showAllPlans, setShowAllPlans] = useState(false)
   const [perimeterGroups, setPerimeterGroups] = useState<PerimeterGroup[]>([])
   const [showPerimeterModal, setShowPerimeterModal] = useState(false)
+  const [showSurfaceModal, setShowSurfaceModal] = useState(false)
+  const [showCounterModal, setShowCounterModal] = useState(false)
   const [drawingState, setDrawingState] = useState<DrawingState | null>(null)
   const [calibration, setCalibration] = useState<Calibration | null>(null)
   const [calibrationMode, setCalibrationMode] = useState(false)
   const [pendingCalibPixels, setPendingCalibPixels] = useState<number | null>(null)
   const [selectedElement, setSelectedElement] = useState<SelectedElement | null>(null)
+  const [counterGroups, setCounterGroups] = useState<CounterGroup[]>([])
+  const [activeCounterGroupId, setActiveCounterGroupId] = useState<string | null>(null)
+  const [counterDrawingMode, setCounterDrawingMode] = useState(false)
 
   const handleZoom = (delta: number) => {
-    setZoom(prev => Math.min(500, Math.max(10, prev + delta)))
+    setZoom(prev => Math.min(2000, Math.max(10, prev + delta)))
   }
 
   const handleCreateProject = (name: string) => {
@@ -97,21 +104,42 @@ function App() {
     } else {
       groupId = crypto.randomUUID()
       setPerimeterGroups(prev => [...prev, {
-        id: groupId, name: data.name, color: data.color, thickness: data.thickness,
-        height: data.height, width: data.width, paths: [], totalLength: 0,
+        id: groupId,
+        name: data.name,
+        type: data.type,
+        color: data.color,
+        thickness: data.thickness,
+        height: data.height,
+        width: data.width,
+        elementThickness: data.elementThickness,
+        articleCCTP: data.articleCCTP,
+        deduction: data.deduction,
+        paths: [],
+        totalLength: 0,
       }])
     }
     const group = data.existingGroupId
       ? perimeterGroups.find(g => g.id === data.existingGroupId)
       : { color: data.color, thickness: data.thickness }
-    setDrawingState({ groupId, color: group?.color ?? data.color, thickness: group?.thickness ?? data.thickness })
+    setDrawingState({
+      groupId,
+      color: group?.color ?? data.color,
+      thickness: group?.thickness ?? data.thickness,
+      toolType: data.type,
+    })
     setShowPerimeterModal(false)
-    setActiveTool('perimetre')
+    setShowSurfaceModal(false)
+    setActiveTool(data.type === 'surface' ? 'surface' : 'perimetre')
   }, [perimeterGroups])
 
   const handleStartDrawingForGroup = useCallback((group: PerimeterGroup) => {
-    setDrawingState({ groupId: group.id, color: group.color, thickness: group.thickness })
-    setActiveTool('perimetre')
+    setDrawingState({
+      groupId: group.id,
+      color: group.color,
+      thickness: group.thickness,
+      toolType: group.type,
+    })
+    setActiveTool(group.type === 'surface' ? 'surface' : 'perimetre')
   }, [])
 
   const handlePathFinished = useCallback((groupId: string, path: PerimeterPath) => {
@@ -147,21 +175,98 @@ function App() {
     setPendingCalibPixels(null)
   }, [])
 
+  const handleCounterConfirm = useCallback((data: { name: string; color: string; existingGroupId?: string }) => {
+    let groupId: string
+    if (data.existingGroupId) {
+      groupId = data.existingGroupId
+    } else {
+      groupId = crypto.randomUUID()
+      setCounterGroups(prev => [...prev, {
+        id: groupId,
+        name: data.name,
+        color: data.color,
+        markers: [],
+      }])
+    }
+    setActiveCounterGroupId(groupId)
+    setCounterDrawingMode(true)
+    setShowCounterModal(false)
+    setActiveTool('compteur')
+  }, [])
+
+  const handleStartCounterForGroup = useCallback((group: CounterGroup) => {
+    setActiveCounterGroupId(group.id)
+    setCounterDrawingMode(true)
+    setActiveTool('compteur')
+  }, [])
+
+  const handleExitCounterMode = useCallback(() => {
+    setCounterDrawingMode(false)
+    setActiveCounterGroupId(null)
+    setActiveTool('pointer')
+  }, [])
+
+  const formatLength = (px: number) => {
+    if (calibration) return `${(px / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
+    return `${Math.round(px)} px`
+  }
+
   const handleExportExcel = () => {
-    const rows = perimeterGroups.map(g => ({
-      Nom: g.name,
-      Couleur: g.color,
-      Longueur: calibration
-        ? `${(g.totalLength / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
-        : `${Math.round(g.totalLength)} px`,
-      Epaisseur: g.thickness,
-      Hauteur: g.height !== undefined ? `${g.height} m` : '',
-      Largeur: g.width !== undefined ? `${g.width} m` : '',
-      'Nb traces': g.paths.length,
-    }))
+    const rows = perimeterGroups.map(g => {
+      const isSurface = g.type === 'surface'
+      const totalFormatted = formatLength(g.totalLength)
+
+      // Surface: formatted area; for perimeter: length × width if both set
+      let surfaceVal = ''
+      if (isSurface) {
+        surfaceVal = totalFormatted
+      } else if (g.width !== undefined && calibration) {
+        const lengthM = g.totalLength / calibration.pixelsPerUnit
+        surfaceVal = `${(lengthM * g.width).toFixed(2)} m²`
+      }
+
+      // Volume = surface × elementThickness if available
+      let volumeVal = ''
+      if (g.elementThickness !== undefined) {
+        if (isSurface && calibration) {
+          const areaM2 = g.totalLength / (calibration.pixelsPerUnit * calibration.pixelsPerUnit)
+          volumeVal = `${(areaM2 * g.elementThickness).toFixed(3)} m³`
+        } else if (!isSurface && g.width !== undefined && calibration) {
+          const lengthM = g.totalLength / calibration.pixelsPerUnit
+          const area = lengthM * g.width
+          volumeVal = `${(area * g.elementThickness).toFixed(3)} m³`
+        }
+      }
+
+      return {
+        'Article CCTP': g.articleCCTP ?? '',
+        'Désignation': g.name,
+        'Quantité': g.paths.length,
+        'Longueur': totalFormatted,
+        'Largeur': g.width !== undefined ? `${g.width} m` : '',
+        'Hauteur': g.height !== undefined ? `${g.height} m` : '',
+        'Épaisseur': g.elementThickness !== undefined ? `${g.elementThickness} m` : '',
+        'Surface': surfaceVal,
+        'Volume': volumeVal,
+        'Déduction': g.deduction ?? '',
+      }
+    })
+
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Groupes')
+
+    // Second sheet: counter groups
+    if (counterGroups.length > 0) {
+      const counterRows = counterGroups.map(g => ({
+        'Nom': g.name,
+        'Couleur': g.color,
+        'Quantité': g.markers.length,
+      }))
+      const wsCounters = XLSX.utils.json_to_sheet(counterRows)
+      XLSX.utils.book_append_sheet(wb, wsCounters, 'Compteurs')
+    }
+
     XLSX.writeFile(wb, `kutch-export-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
@@ -187,8 +292,12 @@ function App() {
         onZoomFit={() => setZoom(100)}
         onImportPdf={handleImportPdf}
         onPerimetreClick={() => setShowPerimeterModal(true)}
+        onSurfaceClick={() => setShowSurfaceModal(true)}
+        onCounterClick={() => setShowCounterModal(true)}
         onStartDrawingForGroup={handleStartDrawingForGroup}
+        onStartCounterForGroup={handleStartCounterForGroup}
         perimeterGroups={perimeterGroups}
+        counterGroups={counterGroups}
         calibrationMode={calibrationMode}
         onCalibrateClick={handleCalibrateClick}
         onExportExcel={handleExportExcel}
@@ -198,6 +307,7 @@ function App() {
           activeLayer={activeLayer}
           selectedElement={selectedElement}
           perimeterGroups={perimeterGroups}
+          counterGroups={counterGroups}
           activePlan={activePlan}
           calibration={calibration}
         />
@@ -215,6 +325,11 @@ function App() {
           onCancelCalibration={handleCancelCalibration}
           onSelectElement={setSelectedElement}
           selectedElement={selectedElement}
+          counterGroups={counterGroups}
+          activeCounterGroupId={activeCounterGroupId}
+          counterDrawingMode={counterDrawingMode}
+          onCounterGroupsChange={setCounterGroups}
+          onExitCounterMode={handleExitCounterMode}
         />
         <RightSidebar
           plans={plans}
@@ -222,6 +337,7 @@ function App() {
           onSelectPlan={p => setActivePlanId(p.id)}
           onOpenAllPlans={() => setShowAllPlans(true)}
           perimeterGroups={perimeterGroups}
+          counterGroups={counterGroups}
           calibration={calibration}
         />
       </div>
@@ -239,8 +355,24 @@ function App() {
       {showPerimeterModal && (
         <PerimeterModal
           groups={perimeterGroups}
+          toolType="perimeter"
           onConfirm={handlePerimeterConfirm}
           onClose={() => setShowPerimeterModal(false)}
+        />
+      )}
+      {showSurfaceModal && (
+        <PerimeterModal
+          groups={perimeterGroups}
+          toolType="surface"
+          onConfirm={handlePerimeterConfirm}
+          onClose={() => setShowSurfaceModal(false)}
+        />
+      )}
+      {showCounterModal && (
+        <CounterModal
+          groups={counterGroups}
+          onConfirm={handleCounterConfirm}
+          onClose={() => setShowCounterModal(false)}
         />
       )}
       {pendingCalibPixels !== null && (

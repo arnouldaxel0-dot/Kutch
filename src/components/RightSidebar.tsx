@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import Panel from './ui/Panel'
 import GroupsPanel from './panels/GroupsPanel'
 import RecentPlansPanel from './panels/RecentPlansPanel'
-import type { Plan, PerimeterGroup } from '../types'
+import type { Plan, PerimeterGroup, CounterGroup } from '../types'
 import type { Calibration } from '../App'
 
 interface RightSidebarProps {
@@ -11,10 +11,11 @@ interface RightSidebarProps {
   onSelectPlan: (plan: Plan) => void
   onOpenAllPlans: () => void
   perimeterGroups: PerimeterGroup[]
+  counterGroups?: CounterGroup[]
   calibration: Calibration | null
 }
 
-export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpenAllPlans, perimeterGroups, calibration }: RightSidebarProps) {
+export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpenAllPlans, perimeterGroups, counterGroups = [], calibration }: RightSidebarProps) {
   const [width, setWidth] = useState(224)
   const [recentHeight, setRecentHeight] = useState(180)
   const isResizingWidth = useRef(false)
@@ -68,7 +69,7 @@ export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpen
 
       <div className="flex flex-col w-full overflow-hidden pl-1">
         <Panel title="Groupes" className="flex-1 overflow-hidden">
-          <GroupsPanel groups={perimeterGroups} calibration={calibration} />
+          <GroupsPanel groups={perimeterGroups} counterGroups={counterGroups} calibration={calibration} />
         </Panel>
 
         {/* Plans récents height resize handle */}

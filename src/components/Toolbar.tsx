@@ -27,7 +27,7 @@ import {
   Crosshair,
 } from 'lucide-react'
 import type { Tool } from '../App'
-import type { PerimeterGroup } from '../types'
+import type { PerimeterGroup, CounterGroup } from '../types'
 import ToolbarButton from './ui/ToolbarButton'
 import Tooltip from './ui/Tooltip'
 
@@ -42,8 +42,12 @@ interface ToolbarProps {
   onZoomFit: () => void
   onImportPdf: () => void
   onPerimetreClick: () => void
+  onSurfaceClick: () => void
+  onCounterClick: () => void
   onStartDrawingForGroup: (group: PerimeterGroup) => void
+  onStartCounterForGroup: (group: CounterGroup) => void
   perimeterGroups: PerimeterGroup[]
+  counterGroups: CounterGroup[]
   calibrationMode: boolean
   onCalibrateClick: () => void
   onExportExcel: () => void
@@ -62,27 +66,41 @@ export default function Toolbar({
   onZoomFit,
   onImportPdf,
   onPerimetreClick,
+  onSurfaceClick,
+  onCounterClick,
   onStartDrawingForGroup,
+  onStartCounterForGroup,
   perimeterGroups,
+  counterGroups,
   calibrationMode,
   onCalibrateClick,
   onExportExcel,
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
+  const [showSurfaceDropdown, setShowSurfaceDropdown] = useState(false)
+  const [showCounterDropdown, setShowCounterDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const surfaceDropdownRef = useRef<HTMLDivElement>(null)
+  const counterDropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowPerimeterDropdown(false)
       }
+      if (surfaceDropdownRef.current && !surfaceDropdownRef.current.contains(e.target as Node)) {
+        setShowSurfaceDropdown(false)
+      }
+      if (counterDropdownRef.current && !counterDropdownRef.current.contains(e.target as Node)) {
+        setShowCounterDropdown(false)
+      }
     }
-    if (showPerimeterDropdown) {
+    if (showPerimeterDropdown || showSurfaceDropdown || showCounterDropdown) {
       document.addEventListener('mousedown', handleClick)
     }
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showPerimeterDropdown])
+  }, [showPerimeterDropdown, showSurfaceDropdown, showCounterDropdown])
 
   return (
     <div className="flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
@@ -157,12 +175,58 @@ export default function Toolbar({
         active={activeTool === 'cadrage'}
         onClick={() => setActiveTool('cadrage')}
       />
-      <ToolbarButton
-        icon={<Square size={15} />}
-        label="Surface"
-        active={activeTool === 'surface'}
-        onClick={() => setActiveTool('surface')}
-      />
+      {/* Surface with dropdown arrow */}
+      <div className="relative flex items-center" ref={surfaceDropdownRef}>
+        <Tooltip text="Surface" position="bottom">
+          <button
+            onClick={onSurfaceClick}
+            className={`flex items-center gap-1 px-1.5 h-7 rounded-l text-xs font-medium transition-colors ${
+              activeTool === 'surface'
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Square size={15} />
+            <span className="hidden sm:block text-xs">Surface</span>
+          </button>
+        </Tooltip>
+        <Tooltip text="Groupes surface existants" position="bottom">
+          <button
+            onClick={() => setShowSurfaceDropdown(v => !v)}
+            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
+              showSurfaceDropdown
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </Tooltip>
+        {showSurfaceDropdown && (
+          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
+            {perimeterGroups.filter(g => g.type === 'surface').length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe surface</div>
+            ) : (
+              perimeterGroups.filter(g => g.type === 'surface').map(group => (
+                <button
+                  key={group.id}
+                  onClick={() => {
+                    onStartDrawingForGroup(group)
+                    setShowSurfaceDropdown(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Périmètre with dropdown arrow */}
       <div className="relative flex items-center" ref={dropdownRef}>
@@ -225,12 +289,59 @@ export default function Toolbar({
         active={activeTool === 'distance'}
         onClick={() => setActiveTool('distance')}
       />
-      <ToolbarButton
-        icon={<Hash size={15} />}
-        label="Compteur"
-        active={activeTool === 'compteur'}
-        onClick={() => setActiveTool('compteur')}
-      />
+      {/* Compteur with dropdown arrow */}
+      <div className="relative flex items-center" ref={counterDropdownRef}>
+        <Tooltip text="Compteur" position="bottom">
+          <button
+            onClick={onCounterClick}
+            className={`flex items-center gap-1 px-1.5 h-7 rounded-l text-xs font-medium transition-colors ${
+              activeTool === 'compteur'
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Hash size={15} />
+            <span className="hidden sm:block text-xs">Compteur</span>
+          </button>
+        </Tooltip>
+        <Tooltip text="Groupes compteur existants" position="bottom">
+          <button
+            onClick={() => setShowCounterDropdown(v => !v)}
+            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
+              showCounterDropdown
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </Tooltip>
+        {showCounterDropdown && (
+          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
+            {counterGroups.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe compteur</div>
+            ) : (
+              counterGroups.map(group => (
+                <button
+                  key={group.id}
+                  onClick={() => {
+                    onStartCounterForGroup(group)
+                    setShowCounterDropdown(false)
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
+                  <span className="ml-auto text-slate-500 text-xs shrink-0">{group.markers.length}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
       <ToolbarButton
         icon={<Compass size={15} />}
         label="Angle"

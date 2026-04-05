@@ -3,18 +3,19 @@ import Panel from './ui/Panel'
 import NavigationPanel from './panels/NavigationPanel'
 import PropertiesPanel from './panels/PropertiesPanel'
 import LayersPanel from './panels/LayersPanel'
-import type { Plan, PerimeterGroup, SelectedElement } from '../types'
+import type { Plan, PerimeterGroup, SelectedElement, CounterGroup } from '../types'
 import type { Calibration } from '../App'
 
 interface LeftSidebarProps {
   activeLayer: string
   selectedElement: SelectedElement | null
   perimeterGroups: PerimeterGroup[]
+  counterGroups: CounterGroup[]
   activePlan: Plan | null
   calibration: Calibration | null
 }
 
-export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement, perimeterGroups, activePlan, calibration }: LeftSidebarProps) {
+export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement, perimeterGroups, counterGroups: _counterGroups, activePlan, calibration }: LeftSidebarProps) {
   const [width, setWidth] = useState(224)
   const [calquesHeight, setCalquesHeight] = useState(120)
   const isResizingWidth = useRef(false)

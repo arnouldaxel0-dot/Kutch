@@ -3,18 +3,22 @@ export interface Point { x: number; y: number }
 export interface PerimeterPath {
   id: string
   points: Point[]
-  length: number // pixel length
+  length: number // pixel length (or area in px² for surface)
 }
 
 export interface PerimeterGroup {
   id: string
   name: string
+  type: 'perimeter' | 'surface'
   color: string
-  thickness: number
+  thickness: number               // line display thickness (1–4)
+  elementThickness?: number       // physical thickness in meters
   height?: number
   width?: number
+  articleCCTP?: string
+  deduction?: number
   paths: PerimeterPath[]
-  totalLength: number // sum of all path lengths
+  totalLength: number             // for perimeter: length; for surface: area in px²
 }
 
 export interface Plan {
@@ -25,7 +29,20 @@ export interface Plan {
 }
 
 export interface SelectedElement {
-  type: 'perimeter'
+  type: 'perimeter' | 'surface' | 'counter'
   groupId: string
   pathId: string
+}
+
+export interface CounterMarker {
+  id: string
+  number: number  // smart assigned number (fills gaps)
+  point: Point
+}
+
+export interface CounterGroup {
+  id: string
+  name: string
+  color: string
+  markers: CounterMarker[]
 }

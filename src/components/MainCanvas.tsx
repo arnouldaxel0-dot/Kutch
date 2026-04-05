@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import type { Tool } from '../App'
-import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement } from '../types'
+import type { Tool, DrawingState } from '../App'
+import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup, CounterMarker } from '../types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
 ).href
-
-interface DrawingState {
-  groupId: string
-  color: string
-  thickness: number
-}
 
 interface MainCanvasProps {
   activeTool: Tool
@@ -28,6 +22,11 @@ interface MainCanvasProps {
   onCancelCalibration: () => void
   onSelectElement: (element: SelectedElement | null) => void
   selectedElement: SelectedElement | null
+  counterGroups: CounterGroup[]
+  activeCounterGroupId: string | null
+  counterDrawingMode: boolean
+  onCounterGroupsChange: (fn: (prev: CounterGroup[]) => CounterGroup[]) => void
+  onExitCounterMode: () => void
 }
 
 const calcLength = (points: Point[]) =>
@@ -36,6 +35,21 @@ const calcLength = (points: Point[]) =>
     const dy = p.y - points[i].y
     return sum + Math.sqrt(dx * dx + dy * dy)
   }, 0)
+
+const calcArea = (points: Point[]) => {
+  let area = 0
+  for (let i = 0; i < points.length - 1; i++) {
+    area += points[i].x * points[i + 1].y - points[i + 1].x * points[i].y
+  }
+  return Math.abs(area) / 2
+}
+
+const nextNumber = (markers: CounterMarker[]) => {
+  const used = new Set(markers.map(m => m.number))
+  let n = 1
+  while (used.has(n)) n++
+  return n
+}
 
 export default function MainCanvas({
   activeTool,
@@ -51,6 +65,11 @@ export default function MainCanvas({
   onCancelCalibration,
   onSelectElement,
   selectedElement,
+  counterGroups,
+  activeCounterGroupId,
+  counterDrawingMode,
+  onCounterGroupsChange,
+  onExitCounterMode,
 }: MainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -139,11 +158,15 @@ export default function MainCanvas({
       const rect = container.getBoundingClientRect()
       const mouseX = e.clientX - rect.left
       const mouseY = e.clientY - rect.top
-      setPan(prev => ({
-        x: mouseX - (mouseX - prev.x) * factor,
-        y: mouseY - (mouseY - prev.y) * factor,
-      }))
-      setScale(prev => Math.min(5, Math.max(0.1, prev * factor)))
+      const prevScale = scaleRef.current
+      const prevPan = panRef.current
+      const newScale = Math.min(20, Math.max(0.05, prevScale * factor))
+      const actualRatio = newScale / prevScale
+      setPan({
+        x: mouseX - (mouseX - prevPan.x) * actualRatio,
+        y: mouseY - (mouseY - prevPan.y) * actualRatio,
+      })
+      setScale(newScale)
     }
 
     container.addEventListener('wheel', handleWheel, { passive: false })
@@ -219,6 +242,17 @@ export default function MainCanvas({
         return
       }
 
+      // Counter placement mode
+      if (counterDrawingMode && activeCounterGroupId) {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        onCounterGroupsChange(prev => prev.map(g => {
+          if (g.id !== activeCounterGroupId) return g
+          const num = nextNumber(g.markers)
+          return { ...g, markers: [...g.markers, { id: crypto.randomUUID(), number: num, point: pt }] }
+        }))
+        return
+      }
+
       // Drawing mode
       if (drawingState) {
         const pt = screenToCanvas(e.clientX, e.clientY)
@@ -231,7 +265,8 @@ export default function MainCanvas({
         const pt = screenToCanvas(e.clientX, e.clientY)
         const hit = findPathAtPoint(pt)
         if (hit) {
-          onSelectElement({ type: 'perimeter', groupId: hit.groupId, pathId: hit.pathId })
+          const group = perimeterGroups.find(g => g.id === hit.groupId)
+          onSelectElement({ type: group?.type ?? 'perimeter', groupId: hit.groupId, pathId: hit.pathId })
         } else {
           onSelectElement(null)
         }
@@ -264,9 +299,38 @@ export default function MainCanvas({
     setMousePos(null)
   }
 
+  // Find counter marker near a canvas point
+  const findMarkerAtPoint = useCallback((canvasPt: Point, groupId: string): CounterMarker | null => {
+    const threshold = 12 / scaleRef.current
+    const group = counterGroups.find(g => g.id === groupId)
+    if (!group) return null
+    for (const m of group.markers) {
+      const dx = m.point.x - canvasPt.x
+      const dy = m.point.y - canvasPt.y
+      if (dx * dx + dy * dy <= threshold * threshold) return m
+    }
+    return null
+  }, [counterGroups])
+
   // Right-click → finish path (also adds mouse position as final point if only 1 point placed)
+  // Also handles deleting counter markers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
+
+    // Counter mode: right-click on marker → delete it
+    if (counterDrawingMode && activeCounterGroupId) {
+      const pt = screenToCanvas(e.clientX, e.clientY)
+      const marker = findMarkerAtPoint(pt, activeCounterGroupId)
+      if (marker) {
+        const markerId = marker.id
+        onCounterGroupsChange(prev => prev.map(g => {
+          if (g.id !== activeCounterGroupId) return g
+          return { ...g, markers: g.markers.filter(m => m.id !== markerId) }
+        }))
+      }
+      return
+    }
+
     if (!drawingState) return
 
     // Build final points array: add current mouse pos as the last point if useful
@@ -279,16 +343,22 @@ export default function MainCanvas({
     }
 
     if (finalPoints.length === 1) {
-      // Only start placed: add cursor as end point (2-point path)
       finalPoints.push(cursorPt)
     }
-    // >= 2 points: save as-is (don't add cursor again)
 
-    const length = calcLength(finalPoints)
+    let pathLength: number
+    if (drawingState.toolType === 'surface' && finalPoints.length >= 3) {
+      // Close polygon back to origin
+      finalPoints.push({ ...finalPoints[0] })
+      pathLength = calcArea(finalPoints)
+    } else {
+      pathLength = calcLength(finalPoints)
+    }
+
     const path: PerimeterPath = {
       id: crypto.randomUUID(),
       points: finalPoints,
-      length,
+      length: pathLength,
     }
     onPathFinished(drawingState.groupId, path)
     setCurrentPoints([])
@@ -302,6 +372,8 @@ export default function MainCanvas({
         if (calibrationMode) {
           setCalibPoints([])
           onCancelCalibration()
+        } else if (counterDrawingMode) {
+          onExitCounterMode()
         } else if (drawingState) {
           setCurrentPoints([])
           setMousePos(null)
@@ -311,7 +383,7 @@ export default function MainCanvas({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration])
+  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode])
 
   const isDrawing = !!drawingState
 
@@ -465,6 +537,19 @@ export default function MainCanvas({
             }}
             xmlns="http://www.w3.org/2000/svg"
           >
+            {/* Surface fills (behind lines) */}
+            {perimeterGroups.filter(g => g.type === 'surface').map(group =>
+              group.paths.map(path => (
+                <polygon
+                  key={`fill-${path.id}`}
+                  points={path.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill={group.color}
+                  fillOpacity={0.15}
+                  stroke="none"
+                />
+              ))
+            )}
+
             {/* Existing finished paths from all groups */}
             {perimeterGroups.map(group =>
               group.paths.map(path => {
@@ -473,7 +558,6 @@ export default function MainCanvas({
                   selectedElement?.pathId === path.id
                 return (
                   <g key={path.id}>
-                    {/* White outline for selected path */}
                     {isSelected && (
                       <path
                         d={buildPathD(path.points)}
@@ -531,16 +615,26 @@ export default function MainCanvas({
               </>
             )}
 
-            {/* Current drawing path */}
+            {/* Current drawing path (+ surface fill preview) */}
             {drawingState && currentPoints.length >= 2 && (
-              <path
-                d={buildPathD(currentPoints)}
-                fill="none"
-                stroke={drawingState.color}
-                strokeWidth={drawingState.thickness / scale}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              <>
+                {drawingState.toolType === 'surface' && (
+                  <polygon
+                    points={currentPoints.map(p => `${p.x},${p.y}`).join(' ')}
+                    fill={drawingState.color}
+                    fillOpacity={0.1}
+                    stroke="none"
+                  />
+                )}
+                <path
+                  d={buildPathD(currentPoints)}
+                  fill="none"
+                  stroke={drawingState.color}
+                  strokeWidth={drawingState.thickness / scale}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </>
             )}
 
             {/* Preview line to cursor */}
@@ -570,6 +664,34 @@ export default function MainCanvas({
                 strokeWidth={1.5 / scale}
               />
             ))}
+
+            {/* Counter markers */}
+            {counterGroups.map(group =>
+              group.markers.map(marker => (
+                <g key={marker.id}>
+                  <circle
+                    cx={marker.point.x}
+                    cy={marker.point.y}
+                    r={10 / scale}
+                    fill={group.color}
+                    stroke="white"
+                    strokeWidth={1.5 / scale}
+                  />
+                  <text
+                    x={marker.point.x}
+                    y={marker.point.y}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="white"
+                    fontSize={9 / scale}
+                    fontWeight="bold"
+                    fontFamily="sans-serif"
+                  >
+                    {marker.number}
+                  </text>
+                </g>
+              ))
+            )}
 
             {/* Calibration points and line */}
             {calibrationMode && calibPoints.length >= 1 && (

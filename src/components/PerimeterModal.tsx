@@ -4,17 +4,23 @@ import type { PerimeterGroup } from '../types'
 
 interface PerimeterModalProps {
   groups: PerimeterGroup[]
+  toolType: 'perimeter' | 'surface'
   onConfirm: (group: Omit<PerimeterGroup, 'id' | 'paths' | 'totalLength'> & { existingGroupId?: string }) => void
   onClose: () => void
 }
 
-export default function PerimeterModal({ groups, onConfirm, onClose }: PerimeterModalProps) {
+export default function PerimeterModal({ groups, toolType, onConfirm, onClose }: PerimeterModalProps) {
   const [name, setName] = useState('')
   const [color, setColor] = useState('#6366f1')
   const [thickness, setThickness] = useState(1.5)
   const [height, setHeight] = useState('')
   const [width, setWidth] = useState('')
+  const [elementThickness, setElementThickness] = useState('')
+  const [articleCCTP, setArticleCCTP] = useState('')
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+
+  // Filter groups by current tool type
+  const filteredGroups = groups.filter(g => g.type === toolType)
 
   const selectExistingGroup = (group: PerimeterGroup) => {
     setSelectedGroupId(group.id)
@@ -23,19 +29,26 @@ export default function PerimeterModal({ groups, onConfirm, onClose }: Perimeter
     setThickness(group.thickness)
     setHeight(group.height !== undefined ? String(group.height) : '')
     setWidth(group.width !== undefined ? String(group.width) : '')
+    setElementThickness(group.elementThickness !== undefined ? String(group.elementThickness) : '')
+    setArticleCCTP(group.articleCCTP ?? '')
   }
 
   const handleConfirm = () => {
     if (!name.trim()) return
     onConfirm({
       name: name.trim(),
+      type: toolType,
       color,
       thickness,
       height: height !== '' ? parseFloat(height) : undefined,
       width: width !== '' ? parseFloat(width) : undefined,
+      elementThickness: elementThickness !== '' ? parseFloat(elementThickness) : undefined,
+      articleCCTP: articleCCTP.trim() || undefined,
       existingGroupId: selectedGroupId ?? undefined,
     })
   }
+
+  const title = toolType === 'surface' ? 'Surface' : 'Périmètre'
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
@@ -45,7 +58,7 @@ export default function PerimeterModal({ groups, onConfirm, onClose }: Perimeter
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-          <h3 className="text-sm font-semibold text-slate-100">Périmètre</h3>
+          <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
           <button
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
@@ -68,7 +81,7 @@ export default function PerimeterModal({ groups, onConfirm, onClose }: Perimeter
             />
           </div>
 
-          {/* Couleur + Épaisseur */}
+          {/* Couleur + Épaisseur trait */}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs text-slate-400 mb-1">Couleur</label>
@@ -80,7 +93,7 @@ export default function PerimeterModal({ groups, onConfirm, onClose }: Perimeter
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-slate-400 mb-1">Épaisseur: {thickness}</label>
+              <label className="block text-xs text-slate-400 mb-1">Épaisseur de trait: {thickness}</label>
               <input
                 type="range"
                 min="1"
@@ -121,12 +134,38 @@ export default function PerimeterModal({ groups, onConfirm, onClose }: Perimeter
             </div>
           </div>
 
+          {/* Épaisseur élément + Article CCTP */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs text-slate-400 mb-1">Épaisseur (m)</label>
+              <input
+                type="number"
+                value={elementThickness}
+                onChange={e => setElementThickness(e.target.value)}
+                placeholder="—"
+                min="0"
+                step="0.01"
+                className="w-full bg-slate-800 border border-slate-600 text-slate-100 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs text-slate-400 mb-1">Article CCTP</label>
+              <input
+                type="text"
+                value={articleCCTP}
+                onChange={e => setArticleCCTP(e.target.value)}
+                placeholder="—"
+                className="w-full bg-slate-800 border border-slate-600 text-slate-100 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
+              />
+            </div>
+          </div>
+
           {/* Existing groups */}
-          {groups.length > 0 && (
+          {filteredGroups.length > 0 && (
             <div>
               <label className="block text-xs text-slate-400 mb-1">Groupes existants</label>
               <div className="max-h-28 overflow-y-auto space-y-1">
-                {groups.map(g => (
+                {filteredGroups.map(g => (
                   <button
                     key={g.id}
                     onClick={() => selectExistingGroup(g)}
