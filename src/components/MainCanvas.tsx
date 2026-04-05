@@ -3,7 +3,8 @@ import type { Tool } from '../App'
 interface MainCanvasProps {
   activeTool: Tool
   zoom: number
-  activePlan: string
+  activePlan: string | null
+  projectName?: string
 }
 
 const TOOL_CURSORS: Record<Tool, string> = {
@@ -18,7 +19,7 @@ const TOOL_CURSORS: Record<Tool, string> = {
   note: 'text',
 }
 
-export default function MainCanvas({ activeTool, zoom, activePlan }: MainCanvasProps) {
+export default function MainCanvas({ activeTool, zoom, activePlan, projectName }: MainCanvasProps) {
   return (
     <div
       className="flex-1 relative bg-slate-950 overflow-hidden flex flex-col"
@@ -26,9 +27,11 @@ export default function MainCanvas({ activeTool, zoom, activePlan }: MainCanvasP
     >
       {/* Plan title bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-800/80 border-b border-slate-700 shrink-0 backdrop-blur-sm">
-        <span className="text-sm font-medium text-slate-200">{activePlan}</span>
+        <span className="text-sm font-medium text-slate-200">
+          {activePlan ?? <span className="text-slate-500 italic">Aucun plan ouvert</span>}
+        </span>
         <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span>Quater Plan — projet appel d'offre (16-Mars-2026).qpl</span>
+          {projectName && <span>{projectName}</span>}
           <span className="text-slate-600">|</span>
           <span>{zoom}%</span>
         </div>
@@ -36,6 +39,21 @@ export default function MainCanvas({ activeTool, zoom, activePlan }: MainCanvasP
 
       {/* Canvas area */}
       <div className="flex-1 overflow-auto flex items-center justify-center p-8">
+        {!activePlan && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none z-10">
+            <div className="w-16 h-16 rounded-2xl bg-slate-800 flex items-center justify-center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-600">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-slate-500 text-sm font-medium">Aucun plan ouvert</p>
+              <p className="text-slate-600 text-xs mt-1">Importez un PDF depuis la barre d'outils</p>
+            </div>
+          </div>
+        )}
+
         <div
           className="relative bg-white shadow-2xl shadow-black/50"
           style={{

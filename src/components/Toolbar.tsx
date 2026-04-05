@@ -20,9 +20,11 @@ import {
   FileDown,
   Clipboard,
   Send,
+  FileUp,
 } from 'lucide-react'
 import type { Tool } from '../App'
 import ToolbarButton from './ui/ToolbarButton'
+import Tooltip from './ui/Tooltip'
 
 interface ToolbarProps {
   activeTool: Tool
@@ -33,6 +35,7 @@ interface ToolbarProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomFit: () => void
+  onImportPdf: () => void
 }
 
 const SCALES = ['1:10', '1:20', '1:25', '1:50', '1:75', '1:100', '1:200', '1:500']
@@ -46,6 +49,7 @@ export default function Toolbar({
   onZoomIn,
   onZoomOut,
   onZoomFit,
+  onImportPdf,
 }: ToolbarProps) {
   return (
     <div className="flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
@@ -56,6 +60,19 @@ export default function Toolbar({
         </div>
         <span className="text-slate-300 text-sm font-semibold hidden sm:block">Kutch</span>
       </div>
+
+      {/* Import PDF */}
+      <Tooltip text="Importer un PDF" position="bottom">
+        <button
+          onClick={onImportPdf}
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors shrink-0"
+        >
+          <FileUp size={13} />
+          <span>Importer PDF</span>
+        </button>
+      </Tooltip>
+
+      <div className="toolbar-separator" />
 
       {/* Édition */}
       <ToolbarButton icon={<Clipboard size={15} />} label="Coller" />
@@ -144,7 +161,7 @@ export default function Toolbar({
       {/* Zoom */}
       <ToolbarButton icon={<Maximize2 size={15} />} label="Ajuster à la sélection" onClick={onZoomFit} />
       <ToolbarButton icon={<Maximize size={15} />} label="Ajuster à la fenêtre" onClick={onZoomFit} />
-      <ToolbarButton icon={<span className="text-xs font-bold">1:1</span>} label="Taille normale" onClick={() => onZoomFit()} />
+      <ToolbarButton icon={<span className="text-xs font-bold">1:1</span>} label="Taille normale" onClick={onZoomFit} />
       <ToolbarButton icon={<ZoomIn size={15} />} label="Zoom avant" onClick={onZoomIn} />
       <ToolbarButton icon={<ZoomOut size={15} />} label="Zoom arrière" onClick={onZoomOut} />
 
