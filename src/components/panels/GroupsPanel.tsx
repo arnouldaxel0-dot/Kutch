@@ -14,6 +14,12 @@ function formatLength(px: number, calibration: Calibration | null): string {
   return `${(px / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
 }
 
+function formatArea(px2: number, calibration: Calibration | null): string {
+  if (!calibration) return `${Math.round(px2)} px²`
+  const area = px2 / (calibration.pixelsPerUnit * calibration.pixelsPerUnit)
+  return `${area.toFixed(2)} ${calibration.unit}²`
+}
+
 export default function GroupsPanel({ groups, counterGroups = [], calibration }: GroupsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -44,7 +50,9 @@ export default function GroupsPanel({ groups, counterGroups = [], calibration }:
       {groups.map(group => {
         const isOpen = expanded[group.id]
         const totalPx = group.totalLength
-        const totalDisplay = formatLength(totalPx, calibration)
+        const totalDisplay = group.type === 'surface'
+          ? formatArea(totalPx, calibration)
+          : formatLength(totalPx, calibration)
         const hasDetails = group.height !== undefined || group.width !== undefined || group.paths.length > 0
         const typeLabel = group.type === 'surface' ? 'S' : 'P'
         return (

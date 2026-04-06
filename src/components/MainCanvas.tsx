@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import type { Tool, DrawingState } from '../App'
+import { Trash2 } from 'lucide-react'
+import type { Tool, DrawingState, Calibration } from '../App'
 import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup, CounterMarker } from '../types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -27,6 +28,9 @@ interface MainCanvasProps {
   counterDrawingMode: boolean
   onCounterGroupsChange: (fn: (prev: CounterGroup[]) => CounterGroup[]) => void
   onExitCounterMode: () => void
+  onDeletePath: (groupId: string, pathId: string) => void
+  onUpdatePath: (groupId: string, pathId: string, newPoints: Point[]) => void
+  calibration: Calibration | null
 }
 
 const calcLength = (points: Point[]) =>
@@ -70,6 +74,9 @@ export default function MainCanvas({
   counterDrawingMode,
   onCounterGroupsChange,
   onExitCounterMode,
+  onDeletePath,
+  onUpdatePath,
+  calibration,
 }: MainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -79,10 +86,17 @@ export default function MainCanvas({
   const [currentPoints, setCurrentPoints] = useState<Point[]>([])
   const [mousePos, setMousePos] = useState<Point | null>(null)
   const [calibPoints, setCalibPoints] = useState<Point[]>([])
+  const [contextMenu, setContextMenu] = useState<{
+    screenX: number; screenY: number; groupId: string; pathId: string
+  } | null>(null)
+  const [draggingPoint, setDraggingPoint] = useState<{
+    groupId: string; pathId: string; pointIndex: number
+  } | null>(null)
   const isPanning = useRef(false)
   const lastPanPoint = useRef({ x: 0, y: 0 })
   const panRef = useRef(pan)
   const scaleRef = useRef(scale)
+  const mousePosRef = useRef<Point | null>(null)
 
   // Keep refs in sync
   useEffect(() => { panRef.current = pan }, [pan])
@@ -263,6 +277,21 @@ export default function MainCanvas({
       // Pointer/selection mode
       if (activeTool === 'pointer') {
         const pt = screenToCanvas(e.clientX, e.clientY)
+        const threshold = 8 / scaleRef.current
+        // Check if clicking near an existing point → drag it
+        for (const group of perimeterGroups) {
+          for (const path of group.paths) {
+            for (let i = 0; i < path.points.length; i++) {
+              const dx = path.points[i].x - pt.x
+              const dy = path.points[i].y - pt.y
+              if (dx * dx + dy * dy <= threshold * threshold) {
+                setDraggingPoint({ groupId: group.id, pathId: path.id, pointIndex: i })
+                return
+              }
+            }
+          }
+        }
+        // Otherwise hit-test for selection
         const hit = findPathAtPoint(pt)
         if (hit) {
           const group = perimeterGroups.find(g => g.id === hit.groupId)
@@ -283,15 +312,34 @@ export default function MainCanvas({
       return
     }
 
+    const pt = screenToCanvas(e.clientX, e.clientY)
+    mousePosRef.current = pt
+
+    // Drag point
+    if (draggingPoint) {
+      const group = perimeterGroups.find(g => g.id === draggingPoint.groupId)
+      const path = group?.paths.find(p => p.id === draggingPoint.pathId)
+      if (path) {
+        const newPoints = [...path.points]
+        newPoints[draggingPoint.pointIndex] = pt
+        // Surface paths are closed (first = last) — keep them in sync
+        if (group?.type === 'surface' && newPoints.length > 1) {
+          if (draggingPoint.pointIndex === 0) newPoints[newPoints.length - 1] = pt
+          else if (draggingPoint.pointIndex === newPoints.length - 1) newPoints[0] = pt
+        }
+        onUpdatePath(draggingPoint.groupId, draggingPoint.pathId, newPoints)
+      }
+      return
+    }
+
     if (drawingState || calibrationMode) {
-      setMousePos(screenToCanvas(e.clientX, e.clientY))
+      setMousePos(pt)
     }
   }
 
   const handleMouseUp = (e: React.MouseEvent) => {
-    if (e.button === 1) {
-      isPanning.current = false
-    }
+    if (e.button === 1) isPanning.current = false
+    if (draggingPoint) setDraggingPoint(null)
   }
 
   const handleMouseLeave = () => {
@@ -331,7 +379,21 @@ export default function MainCanvas({
       return
     }
 
-    if (!drawingState) return
+    if (!drawingState) {
+      // Show context menu on a path
+      const pt = screenToCanvas(e.clientX, e.clientY)
+      const hit = findPathAtPoint(pt)
+      if (hit) {
+        const rect = containerRef.current!.getBoundingClientRect()
+        setContextMenu({
+          screenX: e.clientX - rect.left,
+          screenY: e.clientY - rect.top,
+          groupId: hit.groupId,
+          pathId: hit.pathId,
+        })
+      }
+      return
+    }
 
     // Build final points array: add current mouse pos as the last point if useful
     const finalPoints = [...currentPoints]
@@ -365,10 +427,11 @@ export default function MainCanvas({
     setMousePos(null)
   }
 
-  // Escape → cancel drawing or calibration
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setContextMenu(null)
         if (calibrationMode) {
           setCalibPoints([])
           onCancelCalibration()
@@ -379,11 +442,45 @@ export default function MainCanvas({
           setMousePos(null)
           onCancelDrawing()
         }
+        return
+      }
+
+      // I key — insert point on selected path's nearest segment
+      if ((e.key === 'i' || e.key === 'I') && !drawingState && !counterDrawingMode && !calibrationMode) {
+        const pt = mousePosRef.current
+        if (!pt || !selectedElement) return
+        const group = perimeterGroups.find(g => g.id === selectedElement.groupId)
+        const path = group?.paths.find(p => p.id === selectedElement.pathId)
+        if (!group || !path || path.points.length < 2) return
+
+        let bestDist = Infinity
+        let bestSeg = -1
+        let bestPt: Point = pt
+
+        for (let i = 0; i < path.points.length - 1; i++) {
+          const a = path.points[i]
+          const b = path.points[i + 1]
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const len2 = dx * dx + dy * dy
+          if (len2 === 0) continue
+          const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / len2))
+          const px = a.x + t * dx
+          const py = a.y + t * dy
+          const dist = Math.sqrt((px - pt.x) ** 2 + (py - pt.y) ** 2)
+          if (dist < bestDist) { bestDist = dist; bestSeg = i; bestPt = { x: px, y: py } }
+        }
+
+        if (bestSeg >= 0) {
+          const newPoints = [...path.points]
+          newPoints.splice(bestSeg + 1, 0, bestPt)
+          onUpdatePath(selectedElement.groupId, selectedElement.pathId, newPoints)
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode])
+  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath])
 
   const isDrawing = !!drawingState
 
@@ -393,9 +490,21 @@ export default function MainCanvas({
     return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
   }
 
+  // Helper to format path measurement for context menu
+  const fmtPathLength = (length: number, type: 'perimeter' | 'surface') => {
+    if (type === 'surface') {
+      if (!calibration) return `${Math.round(length)} px²`
+      return `${(length / (calibration.pixelsPerUnit ** 2)).toFixed(2)} ${calibration.unit}²`
+    }
+    if (!calibration) return `${Math.round(length)} px`
+    return `${(length / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
+  }
+
   // Determine cursor
   let cursor = 'default'
-  if (calibrationMode) {
+  if (draggingPoint) {
+    cursor = 'grabbing'
+  } else if (calibrationMode) {
     cursor = 'crosshair'
   } else if (isDrawing) {
     cursor = 'crosshair'
@@ -472,7 +581,7 @@ export default function MainCanvas({
             ? 'ring-2 ring-blue-500 ring-inset'
             : ''
         }`}
-        onMouseDown={handleMouseDown}
+        onMouseDown={e => { if (contextMenu) { setContextMenu(null); return } handleMouseDown(e) }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
@@ -725,6 +834,46 @@ export default function MainCanvas({
           </svg>
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (() => {
+        const grp = perimeterGroups.find(g => g.id === contextMenu.groupId)
+        const pth = grp?.paths.find(p => p.id === contextMenu.pathId)
+        if (!grp || !pth) return null
+        return (
+          <div
+            className="absolute z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl overflow-hidden min-w-48"
+            style={{ left: contextMenu.screenX + 4, top: contextMenu.screenY + 4 }}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            {/* Info header */}
+            <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/60">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: grp.color }} />
+                <span className="text-xs font-semibold text-slate-200 truncate">{grp.name}</span>
+                <span className="ml-auto text-[10px] text-slate-500 shrink-0">
+                  {grp.type === 'surface' ? 'Surface' : 'Périmètre'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1 pl-4 space-y-0.5">
+                <div>{pth.points.length} points</div>
+                <div>{fmtPathLength(pth.length, grp.type)}</div>
+              </div>
+            </div>
+            {/* Actions */}
+            <button
+              onClick={() => {
+                onDeletePath(contextMenu.groupId, contextMenu.pathId)
+                setContextMenu(null)
+              }}
+              className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-900/40 text-red-400 hover:text-red-300 text-xs transition-colors"
+            >
+              <Trash2 size={12} />
+              Supprimer ce tracé
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1 bg-slate-800/60 border-t border-slate-700 shrink-0 text-xs text-slate-500">

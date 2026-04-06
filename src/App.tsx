@@ -10,7 +10,7 @@ import PerimeterModal from './components/PerimeterModal'
 import CounterModal from './components/CounterModal'
 import CalibrationModal from './components/CalibrationModal'
 import type { Project } from './components/StartupMenu'
-import type { Plan, PerimeterGroup, PerimeterPath, SelectedElement, CounterGroup } from './types'
+import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup } from './types'
 
 export type Tool =
   | 'pointer'
@@ -200,6 +200,40 @@ function App() {
     setActiveTool('compteur')
   }, [])
 
+  const handleDeletePath = useCallback((groupId: string, pathId: string) => {
+    setPerimeterGroups(prev => prev.map(g => {
+      if (g.id !== groupId) return g
+      const updated = g.paths.filter(p => p.id !== pathId)
+      return { ...g, paths: updated, totalLength: updated.reduce((s, p) => s + p.length, 0) }
+    }))
+    setSelectedElement(prev => (prev?.pathId === pathId ? null : prev))
+  }, [])
+
+  const handleUpdatePath = useCallback((groupId: string, pathId: string, newPoints: Point[]) => {
+    setPerimeterGroups(prev => prev.map(g => {
+      if (g.id !== groupId) return g
+      const isSurface = g.type === 'surface'
+      const updated = g.paths.map(p => {
+        if (p.id !== pathId) return p
+        let length: number
+        if (isSurface && newPoints.length >= 3) {
+          let area = 0
+          for (let i = 0; i < newPoints.length - 1; i++)
+            area += newPoints[i].x * newPoints[i + 1].y - newPoints[i + 1].x * newPoints[i].y
+          length = Math.abs(area) / 2
+        } else {
+          length = newPoints.slice(1).reduce((sum, pt, i) => {
+            const dx = pt.x - newPoints[i].x
+            const dy = pt.y - newPoints[i].y
+            return sum + Math.sqrt(dx * dx + dy * dy)
+          }, 0)
+        }
+        return { ...p, points: newPoints, length }
+      })
+      return { ...g, paths: updated, totalLength: updated.reduce((s, p) => s + p.length, 0) }
+    }))
+  }, [])
+
   const handleExitCounterMode = useCallback(() => {
     setCounterDrawingMode(false)
     setActiveCounterGroupId(null)
@@ -211,15 +245,22 @@ function App() {
     return `${Math.round(px)} px`
   }
 
+  const formatArea = (px2: number) => {
+    if (calibration) {
+      const area = px2 / (calibration.pixelsPerUnit * calibration.pixelsPerUnit)
+      return `${area.toFixed(2)} ${calibration.unit}²`
+    }
+    return `${Math.round(px2)} px²`
+  }
+
   const handleExportExcel = () => {
     const rows = perimeterGroups.map(g => {
       const isSurface = g.type === 'surface'
-      const totalFormatted = formatLength(g.totalLength)
 
-      // Surface: formatted area; for perimeter: length × width if both set
+      // Surface: area; perimeter: total length
       let surfaceVal = ''
       if (isSurface) {
-        surfaceVal = totalFormatted
+        surfaceVal = formatArea(g.totalLength)
       } else if (g.width !== undefined && calibration) {
         const lengthM = g.totalLength / calibration.pixelsPerUnit
         surfaceVal = `${(lengthM * g.width).toFixed(2)} m²`
@@ -242,7 +283,7 @@ function App() {
         'Article CCTP': g.articleCCTP ?? '',
         'Désignation': g.name,
         'Quantité': g.paths.length,
-        'Longueur': totalFormatted,
+        'Longueur': isSurface ? '' : formatLength(g.totalLength),
         'Largeur': g.width !== undefined ? `${g.width} m` : '',
         'Hauteur': g.height !== undefined ? `${g.height} m` : '',
         'Épaisseur': g.elementThickness !== undefined ? `${g.elementThickness} m` : '',
@@ -330,6 +371,9 @@ function App() {
           counterDrawingMode={counterDrawingMode}
           onCounterGroupsChange={setCounterGroups}
           onExitCounterMode={handleExitCounterMode}
+          onDeletePath={handleDeletePath}
+          onUpdatePath={handleUpdatePath}
+          calibration={calibration}
         />
         <RightSidebar
           plans={plans}
