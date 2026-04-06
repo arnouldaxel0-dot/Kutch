@@ -612,6 +612,15 @@ export default function MainCanvas({
       className="flex-1 relative bg-slate-950 overflow-hidden flex flex-col"
       style={{ cursor }}
     >
+      {/* Calibration reminder banner */}
+      {activePlan && !calibration && !calibrationMode && (
+        <div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-red-600 shrink-0 animate-pulse">
+          <span className="text-white text-xs font-semibold tracking-wide">
+            ⚠ Échelle non calibrée — Cliquez sur le bouton <span className="font-bold underline">Calibrer</span> dans la barre d'outils pour définir l'échelle du plan
+          </span>
+        </div>
+      )}
+
       {/* Plan title bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-800/80 border-b border-slate-700 shrink-0 backdrop-blur-sm">
         <span className="text-sm font-medium text-slate-200">
