@@ -50,6 +50,7 @@ interface ToolbarProps {
   onCalibrateClick: () => void
   onExportExcel: () => void
   onSaveProject: () => void
+  onSaveAs: () => void
   isSaving: boolean
 }
 
@@ -77,6 +78,7 @@ export default function Toolbar({
   onCalibrateClick,
   onExportExcel,
   onSaveProject,
+  onSaveAs,
   isSaving,
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
@@ -123,16 +125,28 @@ export default function Toolbar({
         </button>
       </Tooltip>
 
-      <Tooltip text="Sauvegarder le projet (Ctrl+S)" position="bottom">
-        <button
-          onClick={onSaveProject}
-          disabled={isSaving}
-          className="flex items-center gap-1.5 px-2.5 h-7 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-xs font-medium transition-colors shrink-0 border border-slate-600"
-        >
-          <Save size={13} />
-          <span className="hidden sm:block">{isSaving ? '...' : 'Sauvegarder'}</span>
-        </button>
-      </Tooltip>
+      {/* Save split button */}
+      <div className="flex items-center shrink-0">
+        <Tooltip text="Sauvegarder (Ctrl+S)" position="bottom">
+          <button
+            onClick={onSaveProject}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-2 h-7 rounded-l bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-xs font-medium transition-colors border border-slate-600 border-r-0"
+          >
+            <Save size={13} />
+            <span className="hidden sm:block">{isSaving ? '...' : 'Sauvegarder'}</span>
+          </button>
+        </Tooltip>
+        <Tooltip text="Enregistrer sous…" position="bottom">
+          <button
+            onClick={onSaveAs}
+            disabled={isSaving}
+            className="flex items-center justify-center h-7 w-5 rounded-r bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-400 hover:text-slate-200 transition-colors border border-slate-600"
+          >
+            <ChevronDown size={11} />
+          </button>
+        </Tooltip>
+      </div>
 
       <div className="toolbar-separator" />
 

@@ -59,6 +59,7 @@ function App() {
   const [activeCounterGroupId, setActiveCounterGroupId] = useState<string | null>(null)
   const [counterDrawingMode, setCounterDrawingMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [showSaveAsModal, setShowSaveAsModal] = useState(false)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-save to localStorage 2s after any state change
@@ -96,11 +97,11 @@ function App() {
     })
   }
 
-  const handleSaveProject = async () => {
+  const handleSaveProject = async (customFileName?: string) => {
     if (!project || isSaving) return
     setIsSaving(true)
     try {
-      await saveProjectFile(project, plans, perimeterGroups, counterGroups, calibration, activePlanId)
+      await saveProjectFile(project, plans, perimeterGroups, counterGroups, calibration, activePlanId, customFileName)
     } finally {
       setIsSaving(false)
     }
@@ -439,7 +440,8 @@ function App() {
         calibrationMode={calibrationMode}
         onCalibrateClick={handleCalibrateClick}
         onExportExcel={handleExportExcel}
-        onSaveProject={handleSaveProject}
+        onSaveProject={() => handleSaveProject()}
+        onSaveAs={() => setShowSaveAsModal(true)}
         isSaving={isSaving}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -528,6 +530,13 @@ function App() {
           onClose={() => setShowCounterModal(false)}
         />
       )}
+      {showSaveAsModal && (
+        <SaveAsModal
+          defaultName={project.name}
+          onConfirm={name => { handleSaveProject(name); setShowSaveAsModal(false) }}
+          onClose={() => setShowSaveAsModal(false)}
+        />
+      )}
       {pendingCalibPixels !== null && (
         <CalibrationModal
           pixelLength={pendingCalibPixels}
@@ -535,6 +544,43 @@ function App() {
           onCancel={() => setPendingCalibPixels(null)}
         />
       )}
+    </div>
+  )
+}
+
+// ── Save As Modal ─────────────────────────────────────────────────────────────
+function SaveAsModal({ defaultName, onConfirm, onClose }: {
+  defaultName: string
+  onConfirm: (name: string) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState(defaultName)
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40" onClick={onClose}>
+      <div
+        className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-80 p-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="text-sm font-semibold text-slate-100 mb-3">Enregistrer sous…</h3>
+        <input
+          autoFocus
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onConfirm(name.trim()); if (e.key === 'Escape') onClose() }}
+          className="w-full bg-slate-800 border border-slate-600 text-slate-100 text-sm rounded px-3 py-2 focus:outline-none focus:border-indigo-500 mb-4"
+        />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs font-medium transition-colors">Annuler</button>
+          <button
+            onClick={() => name.trim() && onConfirm(name.trim())}
+            disabled={!name.trim()}
+            className="flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-medium transition-colors"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -50,7 +50,8 @@ export const saveProjectFile = async (
   perimeterGroups: PerimeterGroup[],
   counterGroups: CounterGroup[],
   calibration: Calibration | null,
-  activePlanId: string | null
+  activePlanId: string | null,
+  customFileName?: string
 ) => {
   const planData = await Promise.all(
     plans.map(async p => ({
@@ -76,8 +77,9 @@ export const saveProjectFile = async (
   const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
+  const baseName = (customFileName || project.name).replace(/[^a-zA-Z0-9_\-]/g, '_').replace(/\.kutch$/i, '')
   a.href = url
-  a.download = `${project.name.replace(/[^a-zA-Z0-9_\-]/g, '_')}.kutch`
+  a.download = `${baseName}.kutch`
   a.click()
   URL.revokeObjectURL(url)
 }
