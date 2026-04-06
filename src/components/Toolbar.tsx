@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   MousePointer2,
-  Crop,
   Square,
   Spline,
   Ruler,
   Hash,
-  Compass,
   PenSquare,
   StickyNote,
   Maximize2,
@@ -16,12 +14,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Sun,
   RotateCcw,
   Printer,
   FileDown,
   Clipboard,
-  Send,
   FileUp,
   FileSpreadsheet,
   Crosshair,
@@ -127,7 +123,6 @@ export default function Toolbar({
 
       {/* Édition */}
       <ToolbarButton icon={<Clipboard size={15} />} label="Coller" />
-      <ToolbarButton icon={<Send size={15} />} label="Envoyer les données" />
 
       <div className="toolbar-separator" />
 
@@ -168,12 +163,6 @@ export default function Toolbar({
         label="Pointeur"
         active={activeTool === 'pointer'}
         onClick={() => setActiveTool('pointer')}
-      />
-      <ToolbarButton
-        icon={<Crop size={15} />}
-        label="Cadrage"
-        active={activeTool === 'cadrage'}
-        onClick={() => setActiveTool('cadrage')}
       />
       {/* Surface with dropdown arrow */}
       <div className="relative flex items-center" ref={surfaceDropdownRef}>
@@ -342,12 +331,6 @@ export default function Toolbar({
           </div>
         )}
       </div>
-      <ToolbarButton
-        icon={<Compass size={15} />}
-        label="Angle"
-        active={activeTool === 'angle'}
-        onClick={() => setActiveTool('angle')}
-      />
 
       <div className="toolbar-separator" />
 
@@ -387,7 +370,6 @@ export default function Toolbar({
       <div className="toolbar-separator" />
 
       {/* Ajustements */}
-      <ToolbarButton icon={<Sun size={15} />} label="Luminosité / Contraste" />
       <ToolbarButton icon={<RotateCcw size={15} />} label="Retourner / Pivoter" />
 
       <div className="toolbar-separator" />

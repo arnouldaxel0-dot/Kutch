@@ -200,6 +200,10 @@ function App() {
     setActiveTool('compteur')
   }, [])
 
+  const handleUpdateGroup = useCallback((groupId: string, updates: Partial<PerimeterGroup>) => {
+    setPerimeterGroups(prev => prev.map(g => g.id !== groupId ? g : { ...g, ...updates }))
+  }, [])
+
   const handleDeletePath = useCallback((groupId: string, pathId: string) => {
     setPerimeterGroups(prev => prev.map(g => {
       if (g.id !== groupId) return g
@@ -293,18 +297,32 @@ function App() {
       }
     })
 
-    const ws = XLSX.utils.json_to_sheet(rows)
+    // Add counter groups at the bottom of the main sheet
+    const counterRows = counterGroups.map(g => ({
+      'Article CCTP': '',
+      'Désignation': g.name,
+      'Quantité': g.markers.length,
+      'Longueur': '',
+      'Largeur': '',
+      'Hauteur': '',
+      'Épaisseur': '',
+      'Surface': '',
+      'Volume': '',
+      'Déduction': '',
+    }))
+    const allRows = [...rows, ...counterRows]
+
+    const ws = XLSX.utils.json_to_sheet(allRows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Groupes')
 
-    // Second sheet: counter groups
+    // Second sheet: counter details (without Couleur)
     if (counterGroups.length > 0) {
-      const counterRows = counterGroups.map(g => ({
+      const counterDetailRows = counterGroups.map(g => ({
         'Nom': g.name,
-        'Couleur': g.color,
         'Quantité': g.markers.length,
       }))
-      const wsCounters = XLSX.utils.json_to_sheet(counterRows)
+      const wsCounters = XLSX.utils.json_to_sheet(counterDetailRows)
       XLSX.utils.book_append_sheet(wb, wsCounters, 'Compteurs')
     }
 
@@ -351,6 +369,7 @@ function App() {
           counterGroups={counterGroups}
           activePlan={activePlan}
           calibration={calibration}
+          onUpdateGroup={handleUpdateGroup}
         />
         <MainCanvas
           activeTool={activeTool}

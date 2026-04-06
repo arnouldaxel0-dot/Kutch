@@ -92,6 +92,10 @@ export default function MainCanvas({
   const [draggingPoint, setDraggingPoint] = useState<{
     groupId: string; pathId: string; pointIndex: number
   } | null>(null)
+  const [draggingMarker, setDraggingMarker] = useState<{
+    groupId: string; markerId: string
+  } | null>(null)
+  const [isHoveringPoint, setIsHoveringPoint] = useState(false)
   const isPanning = useRef(false)
   const lastPanPoint = useRef({ x: 0, y: 0 })
   const panRef = useRef(pan)
@@ -277,8 +281,19 @@ export default function MainCanvas({
       // Pointer/selection mode
       if (activeTool === 'pointer') {
         const pt = screenToCanvas(e.clientX, e.clientY)
-        const threshold = 8 / scaleRef.current
-        // Check if clicking near an existing point → drag it
+        const threshold = 12 / scaleRef.current
+        // Check if clicking near a counter marker → drag it
+        for (const group of counterGroups) {
+          for (const marker of group.markers) {
+            const dx = marker.point.x - pt.x
+            const dy = marker.point.y - pt.y
+            if (dx * dx + dy * dy <= threshold * threshold) {
+              setDraggingMarker({ groupId: group.id, markerId: marker.id })
+              return
+            }
+          }
+        }
+        // Check if clicking near an existing path point → drag it
         for (const group of perimeterGroups) {
           for (const path of group.paths) {
             for (let i = 0; i < path.points.length; i++) {
@@ -315,7 +330,16 @@ export default function MainCanvas({
     const pt = screenToCanvas(e.clientX, e.clientY)
     mousePosRef.current = pt
 
-    // Drag point
+    // Drag counter marker
+    if (draggingMarker) {
+      onCounterGroupsChange(prev => prev.map(g => {
+        if (g.id !== draggingMarker.groupId) return g
+        return { ...g, markers: g.markers.map(m => m.id !== draggingMarker.markerId ? m : { ...m, point: pt }) }
+      }))
+      return
+    }
+
+    // Drag path point
     if (draggingPoint) {
       const group = perimeterGroups.find(g => g.id === draggingPoint.groupId)
       const path = group?.paths.find(p => p.id === draggingPoint.pathId)
@@ -332,6 +356,34 @@ export default function MainCanvas({
       return
     }
 
+    // Hover detection for grab cursor (pointer tool, not actively dragging)
+    if (activeTool === 'pointer' && !drawingState && !calibrationMode && !counterDrawingMode) {
+      const hThresh = 12 / scaleRef.current
+      let hovering = false
+      outer: for (const group of perimeterGroups) {
+        for (const path of group.paths) {
+          for (const p2 of path.points) {
+            const dx = p2.x - pt.x
+            const dy = p2.y - pt.y
+            if (dx * dx + dy * dy <= hThresh * hThresh) { hovering = true; break outer }
+          }
+        }
+      }
+      if (!hovering) {
+        for (const group of counterGroups) {
+          for (const m of group.markers) {
+            const dx = m.point.x - pt.x
+            const dy = m.point.y - pt.y
+            if (dx * dx + dy * dy <= hThresh * hThresh) { hovering = true; break }
+          }
+          if (hovering) break
+        }
+      }
+      setIsHoveringPoint(hovering)
+    } else if (isHoveringPoint) {
+      setIsHoveringPoint(false)
+    }
+
     if (drawingState || calibrationMode) {
       setMousePos(pt)
     }
@@ -340,6 +392,7 @@ export default function MainCanvas({
   const handleMouseUp = (e: React.MouseEvent) => {
     if (e.button === 1) isPanning.current = false
     if (draggingPoint) setDraggingPoint(null)
+    if (draggingMarker) setDraggingMarker(null)
   }
 
   const handleMouseLeave = () => {
@@ -445,6 +498,12 @@ export default function MainCanvas({
         return
       }
 
+      // Delete/Backspace key — delete selected path
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement && !drawingState && !counterDrawingMode && !calibrationMode) {
+        onDeletePath(selectedElement.groupId, selectedElement.pathId)
+        return
+      }
+
       // I key — insert point on selected path's nearest segment
       if ((e.key === 'i' || e.key === 'I') && !drawingState && !counterDrawingMode && !calibrationMode) {
         const pt = mousePosRef.current
@@ -480,7 +539,7 @@ export default function MainCanvas({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath])
+  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath, onDeletePath])
 
   const isDrawing = !!drawingState
 
@@ -502,8 +561,10 @@ export default function MainCanvas({
 
   // Determine cursor
   let cursor = 'default'
-  if (draggingPoint) {
+  if (draggingPoint || draggingMarker) {
     cursor = 'grabbing'
+  } else if (isHoveringPoint && activeTool === 'pointer' && !drawingState) {
+    cursor = 'grab'
   } else if (calibrationMode) {
     cursor = 'crosshair'
   } else if (isDrawing) {

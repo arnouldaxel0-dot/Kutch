@@ -13,9 +13,10 @@ interface LeftSidebarProps {
   counterGroups: CounterGroup[]
   activePlan: Plan | null
   calibration: Calibration | null
+  onUpdateGroup: (groupId: string, updates: Partial<PerimeterGroup>) => void
 }
 
-export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement, perimeterGroups, counterGroups: _counterGroups, activePlan, calibration }: LeftSidebarProps) {
+export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement, perimeterGroups, counterGroups: _counterGroups, activePlan, calibration, onUpdateGroup }: LeftSidebarProps) {
   const [width, setWidth] = useState(224)
   const [calquesHeight, setCalquesHeight] = useState(120)
   const isResizingWidth = useRef(false)
@@ -63,6 +64,7 @@ export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement
             perimeterGroups={perimeterGroups}
             activePlan={activePlan}
             calibration={calibration}
+            onUpdateGroup={onUpdateGroup}
           />
         </Panel>
 

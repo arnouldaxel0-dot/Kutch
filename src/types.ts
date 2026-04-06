@@ -17,6 +17,9 @@ export interface PerimeterGroup {
   width?: number
   articleCCTP?: string
   deduction?: number
+  pricePerM2?: number
+  pricePerM3?: number
+  pricePerML?: number
   paths: PerimeterPath[]
   totalLength: number             // for perimeter: length; for surface: area in px²
 }
