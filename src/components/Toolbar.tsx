@@ -39,6 +39,7 @@ interface ToolbarProps {
   onImportPdf: () => void
   onPerimetreClick: () => void
   onSurfaceClick: () => void
+  onDistanceClick: () => void
   onCounterClick: () => void
   onStartDrawingForGroup: (group: PerimeterGroup) => void
   onStartCounterForGroup: (group: CounterGroup) => void
@@ -63,6 +64,7 @@ export default function Toolbar({
   onImportPdf,
   onPerimetreClick,
   onSurfaceClick,
+  onDistanceClick,
   onCounterClick,
   onStartDrawingForGroup,
   onStartCounterForGroup,
@@ -74,29 +76,26 @@ export default function Toolbar({
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
   const [showSurfaceDropdown, setShowSurfaceDropdown] = useState(false)
+  const [showDistanceDropdown, setShowDistanceDropdown] = useState(false)
   const [showCounterDropdown, setShowCounterDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const surfaceDropdownRef = useRef<HTMLDivElement>(null)
+  const distanceDropdownRef = useRef<HTMLDivElement>(null)
   const counterDropdownRef = useRef<HTMLDivElement>(null)
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowPerimeterDropdown(false)
-      }
-      if (surfaceDropdownRef.current && !surfaceDropdownRef.current.contains(e.target as Node)) {
-        setShowSurfaceDropdown(false)
-      }
-      if (counterDropdownRef.current && !counterDropdownRef.current.contains(e.target as Node)) {
-        setShowCounterDropdown(false)
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowPerimeterDropdown(false)
+      if (surfaceDropdownRef.current && !surfaceDropdownRef.current.contains(e.target as Node)) setShowSurfaceDropdown(false)
+      if (distanceDropdownRef.current && !distanceDropdownRef.current.contains(e.target as Node)) setShowDistanceDropdown(false)
+      if (counterDropdownRef.current && !counterDropdownRef.current.contains(e.target as Node)) setShowCounterDropdown(false)
     }
-    if (showPerimeterDropdown || showSurfaceDropdown || showCounterDropdown) {
+    if (showPerimeterDropdown || showSurfaceDropdown || showDistanceDropdown || showCounterDropdown) {
       document.addEventListener('mousedown', handleClick)
     }
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showPerimeterDropdown, showSurfaceDropdown, showCounterDropdown])
+  }, [showPerimeterDropdown, showSurfaceDropdown, showDistanceDropdown, showCounterDropdown])
 
   return (
     <div className="flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
@@ -272,12 +271,50 @@ export default function Toolbar({
         )}
       </div>
 
-      <ToolbarButton
-        icon={<Ruler size={15} />}
-        label="Distance"
-        active={activeTool === 'distance'}
-        onClick={() => setActiveTool('distance')}
-      />
+      {/* Distance with dropdown arrow */}
+      <div className="relative flex items-center" ref={distanceDropdownRef}>
+        <Tooltip text="Distance (2 points)" position="bottom">
+          <button
+            onClick={onDistanceClick}
+            className={`flex items-center gap-1 px-1.5 h-7 rounded-l text-xs font-medium transition-colors ${
+              activeTool === 'distance'
+                ? 'bg-indigo-600 text-white'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Ruler size={15} />
+            <span className="hidden sm:block text-xs">Distance</span>
+          </button>
+        </Tooltip>
+        <Tooltip text="Groupes distance existants" position="bottom">
+          <button
+            onClick={() => setShowDistanceDropdown(v => !v)}
+            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
+              showDistanceDropdown ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </Tooltip>
+        {showDistanceDropdown && (
+          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
+            {perimeterGroups.filter(g => g.type === 'distance').length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe distance</div>
+            ) : (
+              perimeterGroups.filter(g => g.type === 'distance').map(group => (
+                <button
+                  key={group.id}
+                  onClick={() => { onStartDrawingForGroup(group); setShowDistanceDropdown(false) }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
       {/* Compteur with dropdown arrow */}
       <div className="relative flex items-center" ref={counterDropdownRef}>
         <Tooltip text="Compteur" position="bottom">

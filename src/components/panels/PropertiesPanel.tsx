@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Plan, PerimeterGroup, SelectedElement, Point } from '../../types'
 import type { Calibration } from '../../App'
 
-type Tab = 'proprietes' | 'extensions' | 'items'
+type Tab = 'proprietes' | 'extensions' | 'chiffrage'
 type Scope = 'ce-plan' | 'tous-plans'
 
 interface PropertiesPanelProps {
@@ -47,7 +47,7 @@ export default function PropertiesPanel({ selectedElement, perimeterGroups, acti
         {([
           { id: 'proprietes', label: 'Propriétés' },
           { id: 'extensions', label: 'Extensions' },
-          { id: 'items', label: 'Items' },
+          { id: 'chiffrage', label: 'Chiffrage' },
         ] as { id: Tab; label: string }[]).map(tab => (
           <button
             key={tab.id}
@@ -80,7 +80,7 @@ export default function PropertiesPanel({ selectedElement, perimeterGroups, acti
                     <Row label="Surface" value={fmtArea(selectedPath.length, calibration)} accent />
                   </>
                 ) : (
-                  <Row label="Longueur" value={fmtLength(selectedPath.length, calibration)} accent />
+                  <Row label={selectedGroup.type === 'distance' ? 'Distance' : 'Longueur'} value={fmtLength(selectedPath.length, calibration)} accent />
                 )}
                 <Row label="Épaisseur" value={`${selectedGroup.thickness}`} />
                 {selectedGroup.height !== undefined && <Row label="Hauteur" value={`${selectedGroup.height} m`} />}
@@ -110,7 +110,7 @@ export default function PropertiesPanel({ selectedElement, perimeterGroups, acti
           <div className="text-xs text-slate-500 italic">Aucune extension active</div>
         )}
 
-        {activeTab === 'items' && (
+        {activeTab === 'chiffrage' && (
           <div className="space-y-2">
             {perimeterGroups.length === 0 ? (
               <p className="text-xs text-slate-600 italic">Aucun élément mesuré</p>

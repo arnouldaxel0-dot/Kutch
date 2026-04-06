@@ -274,7 +274,20 @@ export default function MainCanvas({
       // Drawing mode
       if (drawingState) {
         const pt = screenToCanvas(e.clientX, e.clientY)
-        setCurrentPoints(prev => [...prev, pt])
+        const newPoints = [...currentPoints, pt]
+        // Distance tool: auto-finish after exactly 2 points
+        if (drawingState.toolType === 'distance' && newPoints.length === 2) {
+          const path: PerimeterPath = {
+            id: crypto.randomUUID(),
+            points: newPoints,
+            length: calcLength(newPoints),
+          }
+          onPathFinished(drawingState.groupId, path)
+          setCurrentPoints([])
+          setMousePos(null)
+          return
+        }
+        setCurrentPoints(newPoints)
         return
       }
 
@@ -310,7 +323,7 @@ export default function MainCanvas({
         const hit = findPathAtPoint(pt)
         if (hit) {
           const group = perimeterGroups.find(g => g.id === hit.groupId)
-          onSelectElement({ type: group?.type ?? 'perimeter', groupId: hit.groupId, pathId: hit.pathId })
+          onSelectElement({ type: (group?.type ?? 'perimeter') as 'perimeter' | 'surface' | 'distance' | 'counter', groupId: hit.groupId, pathId: hit.pathId })
         } else {
           onSelectElement(null)
         }
@@ -550,7 +563,7 @@ export default function MainCanvas({
   }
 
   // Helper to format path measurement for context menu
-  const fmtPathLength = (length: number, type: 'perimeter' | 'surface') => {
+  const fmtPathLength = (length: number, type: 'perimeter' | 'surface' | 'distance') => {
     if (type === 'surface') {
       if (!calibration) return `${Math.round(length)} px²`
       return `${(length / (calibration.pixelsPerUnit ** 2)).toFixed(2)} ${calibration.unit}²`
@@ -913,7 +926,7 @@ export default function MainCanvas({
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: grp.color }} />
                 <span className="text-xs font-semibold text-slate-200 truncate">{grp.name}</span>
                 <span className="ml-auto text-[10px] text-slate-500 shrink-0">
-                  {grp.type === 'surface' ? 'Surface' : 'Périmètre'}
+                  {grp.type === 'surface' ? 'Surface' : grp.type === 'distance' ? 'Distance' : 'Périmètre'}
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 mt-1 pl-4 space-y-0.5">

@@ -9,7 +9,7 @@ export interface PerimeterPath {
 export interface PerimeterGroup {
   id: string
   name: string
-  type: 'perimeter' | 'surface'
+  type: 'perimeter' | 'surface' | 'distance'
   color: string
   thickness: number               // line display thickness (1–4)
   elementThickness?: number       // physical thickness in meters
@@ -21,7 +21,7 @@ export interface PerimeterGroup {
   pricePerM3?: number
   pricePerML?: number
   paths: PerimeterPath[]
-  totalLength: number             // for perimeter: length; for surface: area in px²
+  totalLength: number             // for perimeter/distance: length; for surface: area in px²
 }
 
 export interface Plan {
@@ -32,7 +32,7 @@ export interface Plan {
 }
 
 export interface SelectedElement {
-  type: 'perimeter' | 'surface' | 'counter'
+  type: 'perimeter' | 'surface' | 'distance' | 'counter'
   groupId: string
   pathId: string
 }

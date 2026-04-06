@@ -4,7 +4,7 @@ import type { PerimeterGroup } from '../types'
 
 interface PerimeterModalProps {
   groups: PerimeterGroup[]
-  toolType: 'perimeter' | 'surface'
+  toolType: 'perimeter' | 'surface' | 'distance'
   onConfirm: (group: Omit<PerimeterGroup, 'id' | 'paths' | 'totalLength'> & { existingGroupId?: string }) => void
   onClose: () => void
 }
@@ -19,7 +19,7 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
   const [articleCCTP, setArticleCCTP] = useState('')
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
 
-  // Filter groups by current tool type
+  // For distance: also filter by 'distance' type
   const filteredGroups = groups.filter(g => g.type === toolType)
 
   const selectExistingGroup = (group: PerimeterGroup) => {
@@ -48,7 +48,7 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
     })
   }
 
-  const title = toolType === 'surface' ? 'Surface' : 'Périmètre'
+  const title = toolType === 'surface' ? 'Surface' : toolType === 'distance' ? 'Distance' : 'Périmètre'
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">

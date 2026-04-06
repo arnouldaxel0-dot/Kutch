@@ -52,9 +52,9 @@ export default function GroupsPanel({ groups, counterGroups = [], calibration }:
         const totalPx = group.totalLength
         const totalDisplay = group.type === 'surface'
           ? formatArea(totalPx, calibration)
-          : formatLength(totalPx, calibration)
+          : formatLength(totalPx, calibration) // perimeter or distance
         const hasDetails = group.height !== undefined || group.width !== undefined || group.paths.length > 0
-        const typeLabel = group.type === 'surface' ? 'S' : 'P'
+        const typeLabel = group.type === 'surface' ? 'S' : group.type === 'distance' ? 'D' : 'P'
         return (
           <div key={group.id}>
             <button

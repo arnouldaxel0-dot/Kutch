@@ -27,7 +27,7 @@ export interface DrawingState {
   groupId: string
   color: string
   thickness: number
-  toolType: 'perimeter' | 'surface'
+  toolType: 'perimeter' | 'surface' | 'distance'
 }
 
 export interface Calibration {
@@ -47,6 +47,7 @@ function App() {
   const [perimeterGroups, setPerimeterGroups] = useState<PerimeterGroup[]>([])
   const [showPerimeterModal, setShowPerimeterModal] = useState(false)
   const [showSurfaceModal, setShowSurfaceModal] = useState(false)
+  const [showDistanceModal, setShowDistanceModal] = useState(false)
   const [showCounterModal, setShowCounterModal] = useState(false)
   const [drawingState, setDrawingState] = useState<DrawingState | null>(null)
   const [calibration, setCalibration] = useState<Calibration | null>(null)
@@ -129,7 +130,10 @@ function App() {
     })
     setShowPerimeterModal(false)
     setShowSurfaceModal(false)
-    setActiveTool(data.type === 'surface' ? 'surface' : 'perimetre')
+    setShowDistanceModal(false)
+    if (data.type === 'surface') setActiveTool('surface')
+    else if (data.type === 'distance') setActiveTool('distance')
+    else setActiveTool('perimetre')
   }, [perimeterGroups])
 
   const handleStartDrawingForGroup = useCallback((group: PerimeterGroup) => {
@@ -139,7 +143,9 @@ function App() {
       thickness: group.thickness,
       toolType: group.type,
     })
-    setActiveTool(group.type === 'surface' ? 'surface' : 'perimetre')
+    if (group.type === 'surface') setActiveTool('surface')
+    else if (group.type === 'distance') setActiveTool('distance')
+    else setActiveTool('perimetre')
   }, [])
 
   const handlePathFinished = useCallback((groupId: string, path: PerimeterPath) => {
@@ -286,7 +292,7 @@ function App() {
       return {
         'Article CCTP': g.articleCCTP ?? '',
         'Désignation': g.name,
-        'Quantité': g.paths.length,
+        'Quantité': '',
         'Longueur': isSurface ? '' : formatLength(g.totalLength),
         'Largeur': g.width !== undefined ? `${g.width} m` : '',
         'Hauteur': g.height !== undefined ? `${g.height} m` : '',
@@ -300,7 +306,7 @@ function App() {
     // Add counter groups at the bottom of the main sheet
     const counterRows = counterGroups.map(g => ({
       'Article CCTP': '',
-      'Désignation': g.name,
+      'Désignation': `[Compteur] ${g.name}`,
       'Quantité': g.markers.length,
       'Longueur': '',
       'Largeur': '',
@@ -352,6 +358,7 @@ function App() {
         onImportPdf={handleImportPdf}
         onPerimetreClick={() => setShowPerimeterModal(true)}
         onSurfaceClick={() => setShowSurfaceModal(true)}
+        onDistanceClick={() => setShowDistanceModal(true)}
         onCounterClick={() => setShowCounterModal(true)}
         onStartDrawingForGroup={handleStartDrawingForGroup}
         onStartCounterForGroup={handleStartCounterForGroup}
@@ -429,6 +436,14 @@ function App() {
           toolType="surface"
           onConfirm={handlePerimeterConfirm}
           onClose={() => setShowSurfaceModal(false)}
+        />
+      )}
+      {showDistanceModal && (
+        <PerimeterModal
+          groups={perimeterGroups}
+          toolType="distance"
+          onConfirm={handlePerimeterConfirm}
+          onClose={() => setShowDistanceModal(false)}
         />
       )}
       {showCounterModal && (
