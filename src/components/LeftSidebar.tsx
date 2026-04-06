@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
 import Panel from './ui/Panel'
-import NavigationPanel from './panels/NavigationPanel'
 import PropertiesPanel from './panels/PropertiesPanel'
 import LayersPanel from './panels/LayersPanel'
 import type { Plan, PerimeterGroup, SelectedElement, CounterGroup } from '../types'
@@ -54,10 +53,6 @@ export default function LeftSidebar({ activeLayer: _activeLayer, selectedElement
   return (
     <div className="flex shrink-0 border-r border-slate-700 bg-slate-900 overflow-hidden relative" style={{ width }}>
       <div className="flex flex-col w-full overflow-hidden">
-        <Panel title="Navigation" className="shrink-0">
-          <NavigationPanel />
-        </Panel>
-
         <Panel title="Propriétés" className="flex-1 overflow-hidden">
           <PropertiesPanel
             selectedElement={selectedElement}
