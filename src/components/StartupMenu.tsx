@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { FolderOpen, FilePlus, ChevronRight, Clock } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { FolderOpen, FilePlus, ChevronRight, Clock, RefreshCw } from 'lucide-react'
+import { getAutoSave } from '../utils/projectFile'
 
 export interface Project {
   id: string
@@ -11,13 +12,15 @@ export interface Project {
 interface StartupMenuProps {
   onCreateProject: (name: string) => void
   onOpenProject: (project: Project) => void
+  onLoadProjectFile: (file: File) => void
+  onResumeAutoSave: () => void
 }
 
-const SAVED_PROJECTS: Project[] = []
-
-export default function StartupMenu({ onCreateProject, onOpenProject }: StartupMenuProps) {
+export default function StartupMenu({ onCreateProject, onOpenProject: _onOpenProject, onLoadProjectFile, onResumeAutoSave }: StartupMenuProps) {
   const [creating, setCreating] = useState(false)
   const [projectName, setProjectName] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const autoSave = getAutoSave()
 
   const handleCreate = () => {
     const name = projectName.trim()
@@ -25,8 +28,24 @@ export default function StartupMenu({ onCreateProject, onOpenProject }: StartupM
     onCreateProject(name)
   }
 
+  const handleOpenFile = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) onLoadProjectFile(file)
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-950 flex items-center justify-center z-50">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".kutch,application/json"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       <div className="flex flex-col items-center gap-8 w-full max-w-lg px-6">
         {/* Logo */}
         <div className="flex flex-col items-center gap-3">
@@ -57,18 +76,38 @@ export default function StartupMenu({ onCreateProject, onOpenProject }: StartupM
             </button>
 
             <button
-              onClick={() => {}}
+              onClick={handleOpenFile}
               className="flex items-center gap-4 w-full px-5 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors group text-left"
             >
               <div className="w-9 h-9 rounded-lg bg-slate-700 group-hover:bg-slate-600 flex items-center justify-center shrink-0 transition-colors">
                 <FolderOpen size={18} className="text-slate-300" />
               </div>
               <div className="flex-1">
-                <div className="text-slate-200 font-semibold text-sm">Ouvrir un projet existant</div>
-                <div className="text-slate-500 text-xs mt-0.5">Parcourir les fichiers</div>
+                <div className="text-slate-200 font-semibold text-sm">Ouvrir un projet</div>
+                <div className="text-slate-500 text-xs mt-0.5">Charger un fichier <span className="font-mono">.kutch</span></div>
               </div>
               <ChevronRight size={16} className="text-slate-500" />
             </button>
+
+            {/* Resume auto-save if present */}
+            {autoSave && (
+              <button
+                onClick={onResumeAutoSave}
+                className="flex items-center gap-4 w-full px-5 py-4 rounded-xl bg-slate-800/60 hover:bg-slate-700 border border-amber-700/40 hover:border-amber-600/60 transition-colors group text-left"
+              >
+                <div className="w-9 h-9 rounded-lg bg-amber-900/40 group-hover:bg-amber-800/50 flex items-center justify-center shrink-0 transition-colors">
+                  <RefreshCw size={18} className="text-amber-400" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-amber-300 font-semibold text-sm">Reprendre — {autoSave.project.name}</div>
+                  <div className="text-slate-500 text-xs mt-0.5">
+                    Sauvegarde auto · {new Date(autoSave.savedAt).toLocaleString('fr-FR')}
+                    <span className="ml-2 text-amber-700">· les PDFs devront être re-importés</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-amber-600" />
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-3 w-full">
@@ -104,30 +143,11 @@ export default function StartupMenu({ onCreateProject, onOpenProject }: StartupM
           </div>
         )}
 
-        {/* Recent projects */}
-        {SAVED_PROJECTS.length > 0 && (
-          <div className="w-full">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock size={13} className="text-slate-600" />
-              <span className="text-slate-600 text-xs font-medium uppercase tracking-wider">Projets récents</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              {SAVED_PROJECTS.map(project => (
-                <button
-                  key={project.id}
-                  onClick={() => onOpenProject(project)}
-                  className="flex items-center justify-between w-full px-4 py-2.5 rounded-lg bg-slate-800/50 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition-colors text-left group"
-                >
-                  <div>
-                    <div className="text-slate-300 text-sm font-medium group-hover:text-slate-100 transition-colors">{project.name}</div>
-                    <div className="text-slate-600 text-xs mt-0.5">{project.plansCount} plan{project.plansCount !== 1 ? 's' : ''} · {project.createdAt}</div>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-600 group-hover:text-slate-400 transition-colors" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Recent projects section (reserved for future use) */}
+        <div className="flex items-center gap-2 w-full">
+          <Clock size={11} className="text-slate-700" />
+          <span className="text-slate-700 text-[10px]">Utilisez Ctrl+S dans l'application pour sauvegarder votre projet</span>
+        </div>
       </div>
     </div>
   )

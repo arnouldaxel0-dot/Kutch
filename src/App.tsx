@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
+import { saveProjectFile, loadProjectFile, autoSaveToStorage, getAutoSave } from './utils/projectFile'
 import Toolbar from './components/Toolbar'
 import LeftSidebar from './components/LeftSidebar'
 import MainCanvas from './components/MainCanvas'
@@ -57,6 +58,30 @@ function App() {
   const [counterGroups, setCounterGroups] = useState<CounterGroup[]>([])
   const [activeCounterGroupId, setActiveCounterGroupId] = useState<string | null>(null)
   const [counterDrawingMode, setCounterDrawingMode] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-save to localStorage 2s after any state change
+  useEffect(() => {
+    if (!project) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => {
+      autoSaveToStorage(project, plans, perimeterGroups, counterGroups, calibration, activePlanId)
+    }, 2000)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [project, plans, perimeterGroups, counterGroups, calibration, activePlanId])
+
+  // Ctrl+S → save project file
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        handleSaveProject()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   const handleZoom = (delta: number) => {
     setZoom(prev => Math.min(2000, Math.max(10, prev + delta)))
@@ -70,6 +95,51 @@ function App() {
       plansCount: 0,
     })
   }
+
+  const handleSaveProject = async () => {
+    if (!project || isSaving) return
+    setIsSaving(true)
+    try {
+      await saveProjectFile(project, plans, perimeterGroups, counterGroups, calibration, activePlanId)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleLoadProjectFile = async (file: File) => {
+    try {
+      const { data, plans: loadedPlans } = await loadProjectFile(file)
+      setProject(data.project)
+      setPlans(loadedPlans)
+      setPerimeterGroups(data.perimeterGroups)
+      setCounterGroups(data.counterGroups)
+      setCalibration(data.calibration)
+      setActivePlanId(data.activePlanId)
+      setSelectedElement(null)
+      setDrawingState(null)
+    } catch {
+      alert('Impossible de lire ce fichier .kutch')
+    }
+  }
+
+  const handleResumeAutoSave = () => {
+    const saved = getAutoSave()
+    if (!saved) return
+    setProject(saved.project)
+    setPlans(saved.plans.map(p => ({ id: p.id, name: p.name, importedAt: p.importedAt })))
+    setPerimeterGroups(saved.perimeterGroups)
+    setCounterGroups(saved.counterGroups)
+    setCalibration(saved.calibration)
+    setActivePlanId(saved.activePlanId)
+    setSelectedElement(null)
+    setDrawingState(null)
+  }
+
+  const handleDeleteCounterGroup = useCallback((groupId: string) => {
+    setCounterGroups(prev => prev.filter(g => g.id !== groupId))
+    setActiveCounterGroupId(prev => prev === groupId ? null : prev)
+    if (activeCounterGroupId === groupId) setCounterDrawingMode(false)
+  }, [activeCounterGroupId])
 
   const handleImportPdf = () => {
     const input = document.createElement('input')
@@ -340,6 +410,8 @@ function App() {
       <StartupMenu
         onCreateProject={handleCreateProject}
         onOpenProject={setProject}
+        onLoadProjectFile={handleLoadProjectFile}
+        onResumeAutoSave={handleResumeAutoSave}
       />
     )
   }
@@ -367,6 +439,8 @@ function App() {
         calibrationMode={calibrationMode}
         onCalibrateClick={handleCalibrateClick}
         onExportExcel={handleExportExcel}
+        onSaveProject={handleSaveProject}
+        isSaving={isSaving}
       />
       <div className="flex flex-1 overflow-hidden">
         <LeftSidebar
@@ -409,6 +483,7 @@ function App() {
           perimeterGroups={perimeterGroups}
           counterGroups={counterGroups}
           calibration={calibration}
+          onDeleteCounterGroup={handleDeleteCounterGroup}
         />
       </div>
 

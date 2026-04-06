@@ -13,9 +13,10 @@ interface RightSidebarProps {
   perimeterGroups: PerimeterGroup[]
   counterGroups?: CounterGroup[]
   calibration: Calibration | null
+  onDeleteCounterGroup?: (groupId: string) => void
 }
 
-export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpenAllPlans, perimeterGroups, counterGroups = [], calibration }: RightSidebarProps) {
+export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpenAllPlans, perimeterGroups, counterGroups = [], calibration, onDeleteCounterGroup }: RightSidebarProps) {
   const [width, setWidth] = useState(224)
   const [recentHeight, setRecentHeight] = useState(180)
   const isResizingWidth = useRef(false)
@@ -69,7 +70,7 @@ export default function RightSidebar({ plans, activePlanId, onSelectPlan, onOpen
 
       <div className="flex flex-col w-full overflow-hidden pl-1">
         <Panel title="Groupes" className="flex-1 overflow-hidden">
-          <GroupsPanel groups={perimeterGroups} counterGroups={counterGroups} calibration={calibration} />
+          <GroupsPanel groups={perimeterGroups} counterGroups={counterGroups} calibration={calibration} onDeleteCounterGroup={onDeleteCounterGroup} />
         </Panel>
 
         {/* Plans récents height resize handle */}

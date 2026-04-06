@@ -21,6 +21,7 @@ import {
   FileUp,
   FileSpreadsheet,
   Crosshair,
+  Save,
 } from 'lucide-react'
 import type { Tool } from '../App'
 import type { PerimeterGroup, CounterGroup } from '../types'
@@ -48,6 +49,8 @@ interface ToolbarProps {
   calibrationMode: boolean
   onCalibrateClick: () => void
   onExportExcel: () => void
+  onSaveProject: () => void
+  isSaving: boolean
 }
 
 const SCALES = ['1:10', '1:20', '1:25', '1:50', '1:75', '1:100', '1:200', '1:500']
@@ -73,6 +76,8 @@ export default function Toolbar({
   calibrationMode,
   onCalibrateClick,
   onExportExcel,
+  onSaveProject,
+  isSaving,
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
   const [showSurfaceDropdown, setShowSurfaceDropdown] = useState(false)
@@ -115,6 +120,17 @@ export default function Toolbar({
         >
           <FileUp size={13} />
           <span>Importer PDF</span>
+        </button>
+      </Tooltip>
+
+      <Tooltip text="Sauvegarder le projet (Ctrl+S)" position="bottom">
+        <button
+          onClick={onSaveProject}
+          disabled={isSaving}
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-xs font-medium transition-colors shrink-0 border border-slate-600"
+        >
+          <Save size={13} />
+          <span className="hidden sm:block">{isSaving ? '...' : 'Sauvegarder'}</span>
         </button>
       </Tooltip>
 

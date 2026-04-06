@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react'
 import type { PerimeterGroup, CounterGroup } from '../../types'
 import type { Calibration } from '../../App'
 
@@ -7,6 +7,7 @@ interface GroupsPanelProps {
   groups: PerimeterGroup[]
   counterGroups?: CounterGroup[]
   calibration: Calibration | null
+  onDeleteCounterGroup?: (groupId: string) => void
 }
 
 function formatLength(px: number, calibration: Calibration | null): string {
@@ -20,7 +21,7 @@ function formatArea(px2: number, calibration: Calibration | null): string {
   return `${area.toFixed(2)} ${calibration.unit}²`
 }
 
-export default function GroupsPanel({ groups, counterGroups = [], calibration }: GroupsPanelProps) {
+export default function GroupsPanel({ groups, counterGroups = [], calibration, onDeleteCounterGroup }: GroupsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const toggle = (id: string) =>
@@ -103,12 +104,21 @@ export default function GroupsPanel({ groups, counterGroups = [], calibration }:
             </div>
           )}
           {counterGroups.map(group => (
-            <div key={group.id} className="flex items-center gap-1.5 w-full px-2 py-1.5 border-b border-slate-800">
+            <div key={group.id} className="flex items-center gap-1.5 w-full px-2 py-1.5 border-b border-slate-800 group/cg hover:bg-slate-800/50">
               <span className="w-3 shrink-0" />
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
               <span className="flex-1 truncate text-slate-200 font-medium">{group.name}</span>
               <span className="text-slate-600 text-[9px] shrink-0 mr-1">C</span>
               <span className="text-slate-400 shrink-0 tabular-nums">{group.markers.length} pts</span>
+              {onDeleteCounterGroup && (
+                <button
+                  onClick={() => onDeleteCounterGroup(group.id)}
+                  className="ml-1 opacity-0 group-hover/cg:opacity-100 text-slate-600 hover:text-red-400 transition-all shrink-0"
+                  title="Supprimer ce groupe"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
             </div>
           ))}
         </>
