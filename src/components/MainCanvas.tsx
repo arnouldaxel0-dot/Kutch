@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { Trash2 } from 'lucide-react'
 import type { Tool, DrawingState, Calibration } from '../App'
-import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup, CounterMarker } from '../types'
+import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup, CounterMarker, AnnotationZone, Note } from '../types'
+import NoteWidget from './NoteWidget'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -31,6 +32,13 @@ interface MainCanvasProps {
   onDeletePath: (groupId: string, pathId: string) => void
   onUpdatePath: (groupId: string, pathId: string, newPoints: Point[]) => void
   calibration: Calibration | null
+  zones: AnnotationZone[]
+  onZoneFinished: (points: Point[], color: string, opacity: number) => void
+  zoneDrawingData: { color: string; opacity: number } | null
+  notes: Note[]
+  onPlaceNote: (point: Point) => void
+  onUpdateNote: (id: string, updates: Partial<Note>) => void
+  onDeleteNote: (id: string) => void
 }
 
 const calcLength = (points: Point[]) =>
@@ -77,6 +85,13 @@ export default function MainCanvas({
   onDeletePath,
   onUpdatePath,
   calibration,
+  zones,
+  onZoneFinished,
+  zoneDrawingData,
+  notes,
+  onPlaceNote,
+  onUpdateNote,
+  onDeleteNote,
 }: MainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -122,12 +137,12 @@ export default function MainCanvas({
         const page = await pdf.getPage(1)
         if (cancelled) return
 
-        const viewport = page.getViewport({ scale: 2 })
+        const viewport = page.getViewport({ scale: 3 })
         const canvas = pdfCanvasRef.current!
         canvas.width = viewport.width
         canvas.height = viewport.height
-        const displayW = viewport.width / 2
-        const displayH = viewport.height / 2
+        const displayW = viewport.width / 3
+        const displayH = viewport.height / 3
         setPdfSize({ width: viewport.width, height: viewport.height })
 
         const ctx = canvas.getContext('2d')!
@@ -257,6 +272,20 @@ export default function MainCanvas({
           }
           return next
         })
+        return
+      }
+
+      // Note placement mode
+      if (activeTool === 'note' && !drawingState && !counterDrawingMode) {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        onPlaceNote(pt)
+        return
+      }
+
+      // Zone drawing mode
+      if (activeTool === 'marquer' && zoneDrawingData) {
+        const pt = screenToCanvas(e.clientX, e.clientY)
+        setCurrentPoints(prev => [...prev, pt])
         return
       }
 
@@ -397,7 +426,7 @@ export default function MainCanvas({
       setIsHoveringPoint(false)
     }
 
-    if (drawingState || calibrationMode) {
+    if (drawingState || calibrationMode || (activeTool === 'marquer' && zoneDrawingData)) {
       setMousePos(pt)
     }
   }
@@ -430,6 +459,14 @@ export default function MainCanvas({
   // Also handles deleting counter markers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
+
+    // Zone drawing mode: right-click finishes zone
+    if (activeTool === 'marquer' && zoneDrawingData && currentPoints.length >= 3) {
+      onZoneFinished(currentPoints, zoneDrawingData.color, zoneDrawingData.opacity)
+      setCurrentPoints([])
+      setMousePos(null)
+      return
+    }
 
     // Counter mode: right-click on marker → delete it
     if (counterDrawingMode && activeCounterGroupId) {
@@ -507,6 +544,9 @@ export default function MainCanvas({
           setCurrentPoints([])
           setMousePos(null)
           onCancelDrawing()
+        } else if (activeTool === 'marquer') {
+          setCurrentPoints([])
+          setMousePos(null)
         }
         return
       }
@@ -552,7 +592,7 @@ export default function MainCanvas({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath, onDeletePath])
+  }, [activeTool, drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath, onDeletePath])
 
   const isDrawing = !!drawingState
 
@@ -582,6 +622,10 @@ export default function MainCanvas({
     cursor = 'crosshair'
   } else if (isDrawing) {
     cursor = 'crosshair'
+  } else if (activeTool === 'marquer' && zoneDrawingData) {
+    cursor = 'crosshair'
+  } else if (activeTool === 'note') {
+    cursor = 'crosshair'
   } else if (activeTool === 'pointer') {
     cursor = 'default'
   } else {
@@ -594,7 +638,7 @@ export default function MainCanvas({
       compteur: 'cell',
       angle: 'crosshair',
       marquer: 'crosshair',
-      note: 'text',
+      note: 'crosshair',
     }
     cursor = TOOL_CURSORS[activeTool] ?? 'default'
   }
@@ -654,6 +698,14 @@ export default function MainCanvas({
         </div>
       )}
 
+      {/* Zone drawing mode indicator */}
+      {activeTool === 'marquer' && zoneDrawingData && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 bg-amber-500/90 rounded-full text-white text-xs font-medium shadow-lg pointer-events-none">
+          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: zoneDrawingData.color }} />
+          Tracé de zone — Clic gauche: ajouter point · Clic droit: terminer ({currentPoints.length} pts) · Échap: annuler
+        </div>
+      )}
+
       {/* Canvas area with colored border when drawing/calibrating */}
       <div
         ref={containerRef}
@@ -701,8 +753,8 @@ export default function MainCanvas({
             ref={pdfCanvasRef}
             style={{
               display: activePlan ? 'block' : 'none',
-              width: pdfSize.width / 2,
-              height: pdfSize.height / 2,
+              width: pdfSize.width / 3,
+              height: pdfSize.height / 3,
               imageRendering: 'pixelated',
             }}
           />
@@ -723,12 +775,37 @@ export default function MainCanvas({
               position: 'absolute',
               top: 0,
               left: 0,
-              width: activePlan ? pdfSize.width / 2 : 800,
-              height: activePlan ? pdfSize.height / 2 : 566,
+              width: activePlan ? pdfSize.width / 3 : 800,
+              height: activePlan ? pdfSize.height / 3 : 566,
               overflow: 'visible',
             }}
             xmlns="http://www.w3.org/2000/svg"
           >
+            {/* Annotation zones (behind everything else) */}
+            {zones.map(zone => (
+              <g key={zone.id}>
+                <polygon
+                  points={zone.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill={zone.color}
+                  fillOpacity={zone.opacity}
+                  stroke={zone.color}
+                  strokeOpacity={Math.min(1, zone.opacity + 0.2)}
+                  strokeWidth={1.5 / scale}
+                />
+                {zone.text && (() => {
+                  const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length
+                  const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length
+                  return (
+                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+                      fill={zone.color} fontSize={13 / scale} fontWeight="600"
+                      fontFamily="sans-serif" opacity={Math.min(1, zone.opacity + 0.4)}>
+                      {zone.text}
+                    </text>
+                  )
+                })()}
+              </g>
+            ))}
+
             {/* Surface fills (behind lines) */}
             {perimeterGroups.filter(g => g.type === 'surface').map(group =>
               group.paths.map(path => (
@@ -914,7 +991,57 @@ export default function MainCanvas({
                 ))}
               </>
             )}
+
+            {/* Zone drawing preview */}
+            {activeTool === 'marquer' && zoneDrawingData && currentPoints.length >= 1 && (
+              <>
+                {currentPoints.length >= 2 && (
+                  <polygon
+                    points={currentPoints.map(p => `${p.x},${p.y}`).join(' ')}
+                    fill={zoneDrawingData.color}
+                    fillOpacity={zoneDrawingData.opacity * 0.6}
+                    stroke={zoneDrawingData.color}
+                    strokeOpacity={0.8}
+                    strokeWidth={1.5 / scale}
+                    strokeDasharray={`${6 / scale},${3 / scale}`}
+                  />
+                )}
+                {mousePos && (
+                  <line
+                    x1={currentPoints[currentPoints.length - 1].x}
+                    y1={currentPoints[currentPoints.length - 1].y}
+                    x2={mousePos.x}
+                    y2={mousePos.y}
+                    stroke={zoneDrawingData.color}
+                    strokeWidth={1.5 / scale}
+                    strokeDasharray={`${6 / scale},${4 / scale}`}
+                    opacity={0.7}
+                  />
+                )}
+                {currentPoints.map((pt, i) => (
+                  <circle
+                    key={`zone-pt-${i}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={4 / scale}
+                    fill={zoneDrawingData.color}
+                    stroke="white"
+                    strokeWidth={1.5 / scale}
+                  />
+                ))}
+              </>
+            )}
           </svg>
+          {/* Notes — inside transformed div, auto-scales with pan/zoom */}
+          {notes.map(note => (
+            <NoteWidget
+              key={note.id}
+              note={note}
+              scale={scale}
+              onUpdate={onUpdateNote}
+              onDelete={onDeleteNote}
+            />
+          ))}
         </div>
       </div>
 

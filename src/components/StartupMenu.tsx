@@ -102,7 +102,6 @@ export default function StartupMenu({ onCreateProject, onOpenProject: _onOpenPro
                   <div className="text-amber-300 font-semibold text-sm">Reprendre — {autoSave.project.name}</div>
                   <div className="text-slate-500 text-xs mt-0.5">
                     Sauvegarde auto · {new Date(autoSave.savedAt).toLocaleString('fr-FR')}
-                    <span className="ml-2 text-amber-700">· les PDFs devront être re-importés</span>
                   </div>
                 </div>
                 <ChevronRight size={16} className="text-amber-600" />

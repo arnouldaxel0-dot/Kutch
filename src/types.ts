@@ -49,3 +49,21 @@ export interface CounterGroup {
   color: string
   markers: CounterMarker[]
 }
+
+export interface AnnotationZone {
+  id: string
+  color: string
+  opacity: number   // 0–1
+  text?: string
+  points: Point[]
+}
+
+export interface Note {
+  id: string
+  text: string
+  x: number       // canvas coordinates
+  y: number
+  width: number
+  height: number
+  color: string   // background color
+}

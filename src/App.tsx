@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { saveProjectFile, loadProjectFile, autoSaveToStorage, getAutoSave } from './utils/projectFile'
+import { savePdfToIDB, loadPdfFromIDB } from './utils/pdfStorage'
 import Toolbar from './components/Toolbar'
 import LeftSidebar from './components/LeftSidebar'
 import MainCanvas from './components/MainCanvas'
@@ -10,8 +11,10 @@ import AllPlansModal from './components/AllPlansModal'
 import PerimeterModal from './components/PerimeterModal'
 import CounterModal from './components/CounterModal'
 import CalibrationModal from './components/CalibrationModal'
+import ZoneModal from './components/ZoneModal'
+import ZoneLabelModal from './components/ZoneLabelModal'
 import type { Project } from './components/StartupMenu'
-import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup } from './types'
+import type { Plan, PerimeterGroup, PerimeterPath, Point, SelectedElement, CounterGroup, AnnotationZone, Note } from './types'
 
 export type Tool =
   | 'pointer'
@@ -60,6 +63,12 @@ function App() {
   const [counterDrawingMode, setCounterDrawingMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showSaveAsModal, setShowSaveAsModal] = useState(false)
+  const [zones, setZones] = useState<AnnotationZone[]>([])
+  const [showZoneModal, setShowZoneModal] = useState(false)
+  const [pendingZone, setPendingZone] = useState<{ points: Point[]; color: string; opacity: number } | null>(null)
+  const [zoneDrawingData, setZoneDrawingData] = useState<{ color: string; opacity: number } | null>(null)
+  const [notes, setNotes] = useState<Note[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-save to localStorage 2s after any state change
@@ -67,10 +76,10 @@ function App() {
     if (!project) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
-      autoSaveToStorage(project, plans, perimeterGroups, counterGroups, calibration, activePlanId)
+      autoSaveToStorage(project, plans, perimeterGroups, counterGroups, calibration, activePlanId, zones, notes)
     }, 2000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [project, plans, perimeterGroups, counterGroups, calibration, activePlanId])
+  }, [project, plans, perimeterGroups, counterGroups, calibration, activePlanId, zones, notes])
 
   // Ctrl+S → save project file
   useEffect(() => {
@@ -101,7 +110,7 @@ function App() {
     if (!project || isSaving) return
     setIsSaving(true)
     try {
-      await saveProjectFile(project, plans, perimeterGroups, counterGroups, calibration, activePlanId, customFileName)
+      await saveProjectFile(project, plans, perimeterGroups, counterGroups, calibration, activePlanId, customFileName, zones, notes)
     } finally {
       setIsSaving(false)
     }
@@ -118,22 +127,34 @@ function App() {
       setActivePlanId(data.activePlanId)
       setSelectedElement(null)
       setDrawingState(null)
+      setZones(data.zones ?? [])
+      setNotes(data.notes ?? [])
+      // Save each plan's PDF file to IDB
+      loadedPlans.forEach(p => { if (p.file) savePdfToIDB(p.id, p.file) })
     } catch {
       alert('Impossible de lire ce fichier .kutch')
     }
   }
 
-  const handleResumeAutoSave = () => {
+  const handleResumeAutoSave = async () => {
     const saved = getAutoSave()
     if (!saved) return
     setProject(saved.project)
-    setPlans(saved.plans.map(p => ({ id: p.id, name: p.name, importedAt: p.importedAt })))
     setPerimeterGroups(saved.perimeterGroups)
     setCounterGroups(saved.counterGroups)
     setCalibration(saved.calibration)
     setActivePlanId(saved.activePlanId)
     setSelectedElement(null)
     setDrawingState(null)
+    setZones(saved.zones ?? [])
+    setNotes(saved.notes ?? [])
+    const plansWithFiles = await Promise.all(
+      saved.plans.map(async p => {
+        const file = await loadPdfFromIDB(p.id).catch(() => null)
+        return { id: p.id, name: p.name, importedAt: p.importedAt, file: file ?? undefined }
+      })
+    )
+    setPlans(plansWithFiles)
   }
 
   const handleDeleteCounterGroup = useCallback((groupId: string) => {
@@ -161,8 +182,14 @@ function App() {
         if (!activePlanId) setActivePlanId(updated[0].id)
         return updated
       })
+      // Save each new plan's file to IndexedDB
+      newPlans.forEach(p => { if (p.file) savePdfToIDB(p.id, p.file) })
     }
     input.click()
+  }
+
+  const handleOpenProjectFileFromMenu = () => {
+    fileInputRef.current?.click()
   }
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? null
@@ -321,6 +348,57 @@ function App() {
     setActiveTool('pointer')
   }, [])
 
+  // Zone handlers
+  const handleZoneConfirm = useCallback((color: string, opacity: number) => {
+    setZoneDrawingData({ color, opacity })
+    setActiveTool('marquer')
+    setShowZoneModal(false)
+  }, [])
+
+  const handleZoneFinished = useCallback((points: Point[], color: string, opacity: number) => {
+    setPendingZone({ points, color, opacity })
+  }, [])
+
+  const handleZoneLabelConfirm = useCallback((text: string) => {
+    if (!pendingZone) return
+    const newZone: AnnotationZone = {
+      id: crypto.randomUUID(),
+      color: pendingZone.color,
+      opacity: pendingZone.opacity,
+      text: text || undefined,
+      points: pendingZone.points,
+    }
+    setZones(prev => [...prev, newZone])
+    setPendingZone(null)
+    setZoneDrawingData(null)
+    setActiveTool('pointer')
+  }, [pendingZone])
+
+  // Note handlers
+  const handlePlaceNote = useCallback((point: Point) => {
+    const newNote: Note = {
+      id: crypto.randomUUID(),
+      text: '',
+      x: point.x,
+      y: point.y,
+      width: 160,
+      height: 120,
+      color: '#fef08a',
+    }
+    setNotes(prev => [...prev, newNote])
+    setActiveTool('pointer')
+  }, [])
+
+  const handleUpdateNote = useCallback((id: string, updates: Partial<Note>) => {
+    setNotes(prev => prev.map(n => n.id !== id ? n : { ...n, ...updates }))
+  }, [])
+
+  const handleDeleteNote = useCallback((id: string) => {
+    setNotes(prev => prev.filter(n => n.id !== id))
+  }, [])
+
+  const handlePrint = () => window.print()
+
   const formatLength = (px: number) => {
     if (calibration) return `${(px / calibration.pixelsPerUnit).toFixed(2)} ${calibration.unit}`
     return `${Math.round(px)} px`
@@ -408,17 +486,34 @@ function App() {
 
   if (!project) {
     return (
-      <StartupMenu
-        onCreateProject={handleCreateProject}
-        onOpenProject={setProject}
-        onLoadProjectFile={handleLoadProjectFile}
-        onResumeAutoSave={handleResumeAutoSave}
-      />
+      <>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".kutch,application/json"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleLoadProjectFile(f) }}
+        />
+        <StartupMenu
+          onCreateProject={handleCreateProject}
+          onOpenProject={setProject}
+          onLoadProjectFile={handleLoadProjectFile}
+          onResumeAutoSave={handleResumeAutoSave}
+        />
+      </>
     )
   }
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
+      {/* Hidden file input for opening project from K menu */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".kutch,application/json"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleLoadProjectFile(f) }}
+      />
       <Toolbar
         activeTool={activeTool}
         setActiveTool={setActiveTool}
@@ -443,17 +538,23 @@ function App() {
         onSaveProject={() => handleSaveProject()}
         onSaveAs={() => setShowSaveAsModal(true)}
         isSaving={isSaving}
+        onGoHome={() => setProject(null)}
+        onOpenProjectFile={handleOpenProjectFileFromMenu}
+        onZoneClick={() => setShowZoneModal(true)}
+        onPrint={handlePrint}
       />
       <div className="flex flex-1 overflow-hidden">
-        <LeftSidebar
-          activeLayer={activeLayer}
-          selectedElement={selectedElement}
-          perimeterGroups={perimeterGroups}
-          counterGroups={counterGroups}
-          activePlan={activePlan}
-          calibration={calibration}
-          onUpdateGroup={handleUpdateGroup}
-        />
+        <div className="no-print flex">
+          <LeftSidebar
+            activeLayer={activeLayer}
+            selectedElement={selectedElement}
+            perimeterGroups={perimeterGroups}
+            counterGroups={counterGroups}
+            activePlan={activePlan}
+            calibration={calibration}
+            onUpdateGroup={handleUpdateGroup}
+          />
+        </div>
         <MainCanvas
           activeTool={activeTool}
           zoom={zoom}
@@ -476,17 +577,26 @@ function App() {
           onDeletePath={handleDeletePath}
           onUpdatePath={handleUpdatePath}
           calibration={calibration}
+          zones={zones}
+          onZoneFinished={handleZoneFinished}
+          zoneDrawingData={zoneDrawingData}
+          notes={notes}
+          onPlaceNote={handlePlaceNote}
+          onUpdateNote={handleUpdateNote}
+          onDeleteNote={handleDeleteNote}
         />
-        <RightSidebar
-          plans={plans}
-          activePlanId={activePlanId}
-          onSelectPlan={p => setActivePlanId(p.id)}
-          onOpenAllPlans={() => setShowAllPlans(true)}
-          perimeterGroups={perimeterGroups}
-          counterGroups={counterGroups}
-          calibration={calibration}
-          onDeleteCounterGroup={handleDeleteCounterGroup}
-        />
+        <div className="no-print flex">
+          <RightSidebar
+            plans={plans}
+            activePlanId={activePlanId}
+            onSelectPlan={p => setActivePlanId(p.id)}
+            onOpenAllPlans={() => setShowAllPlans(true)}
+            perimeterGroups={perimeterGroups}
+            counterGroups={counterGroups}
+            calibration={calibration}
+            onDeleteCounterGroup={handleDeleteCounterGroup}
+          />
+        </div>
       </div>
 
       {showAllPlans && (
@@ -543,6 +653,12 @@ function App() {
           onConfirm={handleCalibrationConfirm}
           onCancel={() => setPendingCalibPixels(null)}
         />
+      )}
+      {showZoneModal && (
+        <ZoneModal onConfirm={handleZoneConfirm} onClose={() => setShowZoneModal(false)} />
+      )}
+      {pendingZone && (
+        <ZoneLabelModal onConfirm={handleZoneLabelConfirm} onClose={() => { setPendingZone(null); setZoneDrawingData(null); setActiveTool('pointer') }} />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import type { Plan, PerimeterGroup, CounterGroup } from '../types'
+import type { Plan, PerimeterGroup, CounterGroup, AnnotationZone, Note } from '../types'
 import type { Calibration } from '../App'
 import type { Project } from '../components/StartupMenu'
 
@@ -17,6 +17,8 @@ export interface KutchSaveData {
     fileName?: string
     fileData?: string  // base64 data URL of the PDF
   }>
+  zones?: AnnotationZone[]   // optional for backwards compat
+  notes?: Note[]
 }
 
 const AUTOSAVE_KEY = 'kutch_autosave_v1'
@@ -51,7 +53,9 @@ export const saveProjectFile = async (
   counterGroups: CounterGroup[],
   calibration: Calibration | null,
   activePlanId: string | null,
-  customFileName?: string
+  customFileName?: string,
+  zones?: AnnotationZone[],
+  notes?: Note[]
 ) => {
   const planData = await Promise.all(
     plans.map(async p => ({
@@ -72,6 +76,8 @@ export const saveProjectFile = async (
     calibration,
     activePlanId,
     plans: planData,
+    zones,
+    notes,
   }
 
   const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' })
@@ -108,7 +114,9 @@ export const autoSaveToStorage = (
   perimeterGroups: PerimeterGroup[],
   counterGroups: CounterGroup[],
   calibration: Calibration | null,
-  activePlanId: string | null
+  activePlanId: string | null,
+  zones?: AnnotationZone[],
+  notes?: Note[]
 ) => {
   const data: KutchSaveData = {
     version: '1',
@@ -118,8 +126,10 @@ export const autoSaveToStorage = (
     counterGroups,
     calibration,
     activePlanId,
-    // Metadata only — no fileData — PDFs must be re-imported
+    // Metadata only — no fileData — PDFs loaded from IndexedDB
     plans: plans.map(p => ({ id: p.id, name: p.name, importedAt: p.importedAt })),
+    zones,
+    notes,
   }
   try {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data))

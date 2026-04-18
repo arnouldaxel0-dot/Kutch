@@ -22,6 +22,7 @@ import {
   FileSpreadsheet,
   Crosshair,
   Save,
+  Home,
 } from 'lucide-react'
 import type { Tool } from '../App'
 import type { PerimeterGroup, CounterGroup } from '../types'
@@ -52,6 +53,10 @@ interface ToolbarProps {
   onSaveProject: () => void
   onSaveAs: () => void
   isSaving: boolean
+  onGoHome: () => void
+  onOpenProjectFile: () => void
+  onZoneClick: () => void
+  onPrint: () => void
 }
 
 const SCALES = ['1:10', '1:20', '1:25', '1:50', '1:75', '1:100', '1:200', '1:500']
@@ -80,15 +85,21 @@ export default function Toolbar({
   onSaveProject,
   onSaveAs,
   isSaving,
+  onGoHome,
+  onOpenProjectFile,
+  onZoneClick,
+  onPrint,
 }: ToolbarProps) {
   const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
   const [showSurfaceDropdown, setShowSurfaceDropdown] = useState(false)
   const [showDistanceDropdown, setShowDistanceDropdown] = useState(false)
   const [showCounterDropdown, setShowCounterDropdown] = useState(false)
+  const [showLogoMenu, setShowLogoMenu] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const surfaceDropdownRef = useRef<HTMLDivElement>(null)
   const distanceDropdownRef = useRef<HTMLDivElement>(null)
   const counterDropdownRef = useRef<HTMLDivElement>(null)
+  const logoMenuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -97,21 +108,67 @@ export default function Toolbar({
       if (surfaceDropdownRef.current && !surfaceDropdownRef.current.contains(e.target as Node)) setShowSurfaceDropdown(false)
       if (distanceDropdownRef.current && !distanceDropdownRef.current.contains(e.target as Node)) setShowDistanceDropdown(false)
       if (counterDropdownRef.current && !counterDropdownRef.current.contains(e.target as Node)) setShowCounterDropdown(false)
+      if (logoMenuRef.current && !logoMenuRef.current.contains(e.target as Node)) setShowLogoMenu(false)
     }
-    if (showPerimeterDropdown || showSurfaceDropdown || showDistanceDropdown || showCounterDropdown) {
+    if (showPerimeterDropdown || showSurfaceDropdown || showDistanceDropdown || showCounterDropdown || showLogoMenu) {
       document.addEventListener('mousedown', handleClick)
     }
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showPerimeterDropdown, showSurfaceDropdown, showDistanceDropdown, showCounterDropdown])
+  }, [showPerimeterDropdown, showSurfaceDropdown, showDistanceDropdown, showCounterDropdown, showLogoMenu])
 
   return (
-    <div className="flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
-      {/* Logo */}
-      <div className="flex items-center gap-2 mr-2 pr-2 border-r border-slate-600">
-        <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center">
-          <span className="text-white text-xs font-bold">K</span>
-        </div>
-        <span className="text-slate-300 text-sm font-semibold hidden sm:block">Kutch</span>
+    <div className="no-print flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
+      {/* Logo menu */}
+      <div className="relative flex items-center gap-2 mr-2 pr-2 border-r border-slate-600" ref={logoMenuRef}>
+        <button
+          onClick={() => setShowLogoMenu(v => !v)}
+          className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-slate-700 transition-colors"
+        >
+          <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center">
+            <span className="text-white text-xs font-bold">K</span>
+          </div>
+          <span className="text-slate-300 text-sm font-semibold hidden sm:block">Kutch</span>
+        </button>
+        {showLogoMenu && (
+          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-44 py-1 overflow-hidden">
+            <button
+              onClick={() => { onGoHome(); setShowLogoMenu(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+            >
+              <Home size={13} className="text-slate-400" />
+              <span className="text-xs text-slate-300">Accueil</span>
+            </button>
+            <button
+              onClick={() => { onGoHome(); setShowLogoMenu(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+            >
+              <span className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-xs text-slate-300">Nouveau projet</span>
+            </button>
+            <div className="my-1 border-t border-slate-700" />
+            <button
+              onClick={() => { onOpenProjectFile(); setShowLogoMenu(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+            >
+              <span className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-xs text-slate-300">Ouvrir un projet…</span>
+            </button>
+            <button
+              onClick={() => { onSaveProject(); setShowLogoMenu(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+            >
+              <span className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-xs text-slate-300">Sauvegarder</span>
+            </button>
+            <button
+              onClick={() => { onSaveAs(); setShowLogoMenu(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
+            >
+              <span className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-xs text-slate-300">Enregistrer sous…</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Import PDF */}
@@ -406,7 +463,7 @@ export default function Toolbar({
         icon={<PenSquare size={15} />}
         label="Marquer une zone"
         active={activeTool === 'marquer'}
-        onClick={() => setActiveTool('marquer')}
+        onClick={onZoneClick}
       />
       <ToolbarButton
         icon={<StickyNote size={15} />}
@@ -442,7 +499,7 @@ export default function Toolbar({
       <div className="toolbar-separator" />
 
       {/* Imprimer / Exporter */}
-      <ToolbarButton icon={<Printer size={15} />} label="Imprimer" />
+      <ToolbarButton icon={<Printer size={15} />} label="Imprimer" onClick={onPrint} />
       <ToolbarButton icon={<FileDown size={15} />} label="Exporter vers PDF" />
 
       {/* Export Excel — last button, green, pushed to the right */}

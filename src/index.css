@@ -66,3 +66,8 @@ body {
 .tab-btn:not(.active) {
   @apply text-slate-400 hover:text-slate-200 hover:bg-slate-700;
 }
+
+@media print {
+  .no-print { display: none !important; }
+  .print-canvas-only { position: fixed !important; inset: 0 !important; z-index: 9999 !important; }
+}
