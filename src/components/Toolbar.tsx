@@ -95,11 +95,13 @@ export default function Toolbar({
   const [showDistanceDropdown, setShowDistanceDropdown] = useState(false)
   const [showCounterDropdown, setShowCounterDropdown] = useState(false)
   const [showLogoMenu, setShowLogoMenu] = useState(false)
+  const [logoMenuPos, setLogoMenuPos] = useState({ top: 40, left: 8 })
   const dropdownRef = useRef<HTMLDivElement>(null)
   const surfaceDropdownRef = useRef<HTMLDivElement>(null)
   const distanceDropdownRef = useRef<HTMLDivElement>(null)
   const counterDropdownRef = useRef<HTMLDivElement>(null)
   const logoMenuRef = useRef<HTMLDivElement>(null)
+  const logoButtonRef = useRef<HTMLButtonElement>(null)
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -121,7 +123,12 @@ export default function Toolbar({
       {/* Logo menu */}
       <div className="relative flex items-center gap-2 mr-2 pr-2 border-r border-slate-600" ref={logoMenuRef}>
         <button
-          onClick={() => setShowLogoMenu(v => !v)}
+          ref={logoButtonRef}
+          onClick={() => {
+            const rect = logoButtonRef.current?.getBoundingClientRect()
+            if (rect) setLogoMenuPos({ top: rect.bottom + 6, left: rect.left })
+            setShowLogoMenu(v => !v)
+          }}
           className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-slate-700 transition-colors"
         >
           <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center">
@@ -130,7 +137,10 @@ export default function Toolbar({
           <span className="text-slate-300 text-sm font-semibold hidden sm:block">Kutch</span>
         </button>
         {showLogoMenu && (
-          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-44 py-1 overflow-hidden">
+          <div
+            className="fixed z-[200] bg-slate-900 border border-slate-700 rounded-lg shadow-2xl min-w-44 py-1 overflow-hidden"
+            style={{ top: logoMenuPos.top, left: logoMenuPos.left }}
+          >
             <button
               onClick={() => { onGoHome(); setShowLogoMenu(false) }}
               className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"

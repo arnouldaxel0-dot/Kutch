@@ -34,6 +34,8 @@ interface MainCanvasProps {
   calibration: Calibration | null
   zones: AnnotationZone[]
   onZoneFinished: (points: Point[], color: string, opacity: number) => void
+  onUpdateZone: (id: string, newPoints: Point[]) => void
+  onDeleteZone: (id: string) => void
   zoneDrawingData: { color: string; opacity: number } | null
   notes: Note[]
   onPlaceNote: (point: Point) => void
@@ -63,6 +65,16 @@ const nextNumber = (markers: CounterMarker[]) => {
   return n
 }
 
+const pointInPolygon = (pt: Point, poly: Point[]): boolean => {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
+    if ((yi > pt.y) !== (yj > pt.y) && pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi)
+      inside = !inside
+  }
+  return inside
+}
+
 export default function MainCanvas({
   activeTool,
   zoom: _zoom,
@@ -87,6 +99,8 @@ export default function MainCanvas({
   calibration,
   zones,
   onZoneFinished,
+  onUpdateZone,
+  onDeleteZone,
   zoneDrawingData,
   notes,
   onPlaceNote,
@@ -104,6 +118,9 @@ export default function MainCanvas({
   const [contextMenu, setContextMenu] = useState<{
     screenX: number; screenY: number; groupId: string; pathId: string
   } | null>(null)
+  const [zoneContextMenu, setZoneContextMenu] = useState<{
+    screenX: number; screenY: number; zoneId: string
+  } | null>(null)
   const [draggingPoint, setDraggingPoint] = useState<{
     groupId: string; pathId: string; pointIndex: number
   } | null>(null)
@@ -111,6 +128,9 @@ export default function MainCanvas({
     groupId: string; markerId: string
   } | null>(null)
   const [isHoveringPoint, setIsHoveringPoint] = useState(false)
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+  const [draggingZoneVertex, setDraggingZoneVertex] = useState<{ zoneId: string; idx: number } | null>(null)
+  const draggingZoneBodyRef = useRef<{ zoneId: string; startMouse: Point; originalPoints: Point[] } | null>(null)
   const isPanning = useRef(false)
   const lastPanPoint = useRef({ x: 0, y: 0 })
   const panRef = useRef(pan)
@@ -353,8 +373,37 @@ export default function MainCanvas({
         if (hit) {
           const group = perimeterGroups.find(g => g.id === hit.groupId)
           onSelectElement({ type: (group?.type ?? 'perimeter') as 'perimeter' | 'surface' | 'distance' | 'counter', groupId: hit.groupId, pathId: hit.pathId })
+          setSelectedZoneId(null)
         } else {
           onSelectElement(null)
+          // Check zone vertex drag
+          const zThresh = 10 / scaleRef.current
+          let zoneHit = false
+          for (const zone of zones) {
+            for (let i = 0; i < zone.points.length; i++) {
+              const dx = zone.points[i].x - pt.x
+              const dy = zone.points[i].y - pt.y
+              if (dx * dx + dy * dy <= zThresh * zThresh) {
+                setSelectedZoneId(zone.id)
+                setDraggingZoneVertex({ zoneId: zone.id, idx: i })
+                zoneHit = true
+                break
+              }
+            }
+            if (zoneHit) break
+          }
+          // Check zone body drag
+          if (!zoneHit) {
+            for (const zone of [...zones].reverse()) {
+              if (pointInPolygon(pt, zone.points)) {
+                setSelectedZoneId(zone.id)
+                draggingZoneBodyRef.current = { zoneId: zone.id, startMouse: pt, originalPoints: [...zone.points] }
+                zoneHit = true
+                break
+              }
+            }
+          }
+          if (!zoneHit) setSelectedZoneId(null)
         }
       }
     }
@@ -378,6 +427,26 @@ export default function MainCanvas({
         if (g.id !== draggingMarker.groupId) return g
         return { ...g, markers: g.markers.map(m => m.id !== draggingMarker.markerId ? m : { ...m, point: pt }) }
       }))
+      return
+    }
+
+    // Drag zone vertex
+    if (draggingZoneVertex) {
+      const zone = zones.find(z => z.id === draggingZoneVertex.zoneId)
+      if (zone) {
+        const newPoints = [...zone.points]
+        newPoints[draggingZoneVertex.idx] = pt
+        onUpdateZone(zone.id, newPoints)
+      }
+      return
+    }
+
+    // Drag zone body
+    if (draggingZoneBodyRef.current) {
+      const { zoneId, startMouse, originalPoints } = draggingZoneBodyRef.current
+      const dx = pt.x - startMouse.x
+      const dy = pt.y - startMouse.y
+      onUpdateZone(zoneId, originalPoints.map(p => ({ x: p.x + dx, y: p.y + dy })))
       return
     }
 
@@ -435,6 +504,8 @@ export default function MainCanvas({
     if (e.button === 1) isPanning.current = false
     if (draggingPoint) setDraggingPoint(null)
     if (draggingMarker) setDraggingMarker(null)
+    if (draggingZoneVertex) setDraggingZoneVertex(null)
+    if (draggingZoneBodyRef.current) draggingZoneBodyRef.current = null
   }
 
   const handleMouseLeave = () => {
@@ -483,11 +554,19 @@ export default function MainCanvas({
     }
 
     if (!drawingState) {
-      // Show context menu on a path
       const pt = screenToCanvas(e.clientX, e.clientY)
+      const rect = containerRef.current!.getBoundingClientRect()
+      // Check zone hit first
+      for (const zone of [...zones].reverse()) {
+        if (pointInPolygon(pt, zone.points)) {
+          setSelectedZoneId(zone.id)
+          setZoneContextMenu({ screenX: e.clientX - rect.left, screenY: e.clientY - rect.top, zoneId: zone.id })
+          return
+        }
+      }
+      // Show context menu on a path
       const hit = findPathAtPoint(pt)
       if (hit) {
-        const rect = containerRef.current!.getBoundingClientRect()
         setContextMenu({
           screenX: e.clientX - rect.left,
           screenY: e.clientY - rect.top,
@@ -535,6 +614,8 @@ export default function MainCanvas({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setContextMenu(null)
+        setZoneContextMenu(null)
+        setSelectedZoneId(null)
         if (calibrationMode) {
           setCalibPoints([])
           onCancelCalibration()
@@ -551,10 +632,17 @@ export default function MainCanvas({
         return
       }
 
-      // Delete/Backspace key — delete selected path
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement && !drawingState && !counterDrawingMode && !calibrationMode) {
-        onDeletePath(selectedElement.groupId, selectedElement.pathId)
-        return
+      // Delete/Backspace key — delete selected zone or path
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !drawingState && !counterDrawingMode && !calibrationMode) {
+        if (selectedZoneId) {
+          onDeleteZone(selectedZoneId)
+          setSelectedZoneId(null)
+          return
+        }
+        if (selectedElement) {
+          onDeletePath(selectedElement.groupId, selectedElement.pathId)
+          return
+        }
       }
 
       // I key — insert point on selected path's nearest segment
@@ -592,7 +680,7 @@ export default function MainCanvas({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeTool, drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath, onDeletePath])
+  }, [activeTool, drawingState, onCancelDrawing, calibrationMode, onCancelCalibration, counterDrawingMode, onExitCounterMode, selectedElement, perimeterGroups, onUpdatePath, onDeletePath, selectedZoneId, zones, onDeleteZone])
 
   const isDrawing = !!drawingState
 
@@ -782,29 +870,46 @@ export default function MainCanvas({
             xmlns="http://www.w3.org/2000/svg"
           >
             {/* Annotation zones (behind everything else) */}
-            {zones.map(zone => (
-              <g key={zone.id}>
-                <polygon
-                  points={zone.points.map(p => `${p.x},${p.y}`).join(' ')}
-                  fill={zone.color}
-                  fillOpacity={zone.opacity}
-                  stroke={zone.color}
-                  strokeOpacity={Math.min(1, zone.opacity + 0.2)}
-                  strokeWidth={1.5 / scale}
-                />
-                {zone.text && (() => {
-                  const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length
-                  const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length
-                  return (
-                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-                      fill={zone.color} fontSize={13 / scale} fontWeight="600"
-                      fontFamily="sans-serif" opacity={Math.min(1, zone.opacity + 0.4)}>
-                      {zone.text}
-                    </text>
-                  )
-                })()}
-              </g>
-            ))}
+            {zones.map(zone => {
+              const isSel = zone.id === selectedZoneId
+              return (
+                <g key={zone.id}>
+                  <polygon
+                    points={zone.points.map(p => `${p.x},${p.y}`).join(' ')}
+                    fill={zone.color}
+                    fillOpacity={zone.opacity}
+                    stroke={isSel ? 'white' : zone.color}
+                    strokeOpacity={isSel ? 0.9 : Math.min(1, zone.opacity + 0.2)}
+                    strokeWidth={(isSel ? 2 : 1.5) / scale}
+                    strokeDasharray={isSel ? `${6 / scale},${3 / scale}` : undefined}
+                  />
+                  {zone.text && (() => {
+                    const cx = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length
+                    const cy = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length
+                    return (
+                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+                        fill={zone.color} fontSize={13 / scale} fontWeight="600"
+                        fontFamily="sans-serif" opacity={Math.min(1, zone.opacity + 0.4)}>
+                        {zone.text}
+                      </text>
+                    )
+                  })()}
+                  {/* Vertex handles when selected */}
+                  {isSel && zone.points.map((pt, i) => (
+                    <circle
+                      key={`zv-${i}`}
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={6 / scale}
+                      fill="white"
+                      stroke={zone.color}
+                      strokeWidth={2 / scale}
+                      style={{ cursor: 'grab' }}
+                    />
+                  ))}
+                </g>
+              )
+            })}
 
             {/* Surface fills (behind lines) */}
             {perimeterGroups.filter(g => g.type === 'surface').map(group =>
@@ -1084,6 +1189,31 @@ export default function MainCanvas({
           </div>
         )
       })()}
+
+      {/* Zone context menu */}
+      {zoneContextMenu && (
+        <div
+          className="absolute z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl overflow-hidden min-w-44"
+          style={{ left: zoneContextMenu.screenX + 4, top: zoneContextMenu.screenY + 4 }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/60">
+            <span className="text-xs font-semibold text-slate-200">Zone marquée</span>
+            <p className="text-[10px] text-slate-500 mt-0.5">Glisser pour déplacer · Poignées pour redimensionner</p>
+          </div>
+          <button
+            onClick={() => {
+              onDeleteZone(zoneContextMenu.zoneId)
+              setSelectedZoneId(null)
+              setZoneContextMenu(null)
+            }}
+            className="flex items-center gap-2 w-full px-3 py-2 hover:bg-red-900/40 text-red-400 hover:text-red-300 text-xs transition-colors"
+          >
+            <Trash2 size={12} />
+            Supprimer la zone
+          </button>
+        </div>
+      )}
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1 bg-slate-800/60 border-t border-slate-700 shrink-0 text-xs text-slate-500">

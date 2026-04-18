@@ -348,6 +348,14 @@ function App() {
     setActiveTool('pointer')
   }, [])
 
+  const handleUpdateZone = useCallback((id: string, newPoints: Point[]) => {
+    setZones(prev => prev.map(z => z.id !== id ? z : { ...z, points: newPoints }))
+  }, [])
+
+  const handleDeleteZone = useCallback((id: string) => {
+    setZones(prev => prev.filter(z => z.id !== id))
+  }, [])
+
   // Zone handlers
   const handleZoneConfirm = useCallback((color: string, opacity: number) => {
     setZoneDrawingData({ color, opacity })
@@ -579,6 +587,8 @@ function App() {
           calibration={calibration}
           zones={zones}
           onZoneFinished={handleZoneFinished}
+          onUpdateZone={handleUpdateZone}
+          onDeleteZone={handleDeleteZone}
           zoneDrawingData={zoneDrawingData}
           notes={notes}
           onPlaceNote={handlePlaceNote}
