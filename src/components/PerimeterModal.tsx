@@ -17,6 +17,7 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
   const [width, setWidth] = useState('')
   const [elementThickness, setElementThickness] = useState('')
   const [articleCCTP, setArticleCCTP] = useState('')
+  const [isCounter, setIsCounter] = useState(false)
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
 
   // For distance: also filter by 'distance' type
@@ -31,6 +32,7 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
     setWidth(group.width !== undefined ? String(group.width) : '')
     setElementThickness(group.elementThickness !== undefined ? String(group.elementThickness) : '')
     setArticleCCTP(group.articleCCTP ?? '')
+    setIsCounter(group.isCounter ?? false)
   }
 
   const handleConfirm = () => {
@@ -44,6 +46,7 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
       width: width !== '' ? parseFloat(width) : undefined,
       elementThickness: elementThickness !== '' ? parseFloat(elementThickness) : undefined,
       articleCCTP: articleCCTP.trim() || undefined,
+      isCounter: selectedGroupId ? undefined : isCounter,
       existingGroupId: selectedGroupId ?? undefined,
     })
   }
@@ -80,6 +83,25 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
               className="w-full bg-slate-800 border border-slate-600 text-slate-100 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
             />
           </div>
+
+          {/* COMPTEUR toggle */}
+          <label className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors select-none ${
+            isCounter
+              ? 'bg-amber-600/15 border-amber-500/50 text-amber-300'
+              : 'bg-slate-800 border-slate-700 hover:border-slate-500 text-slate-400'
+          } ${selectedGroupId ? 'opacity-60 pointer-events-none' : ''}`}>
+            <input
+              type="checkbox"
+              checked={isCounter}
+              onChange={e => setIsCounter(e.target.checked)}
+              disabled={!!selectedGroupId}
+              className="w-3.5 h-3.5 accent-amber-500"
+            />
+            <span className="text-xs font-semibold tracking-wide">COMPTEUR</span>
+            <span className="text-[10px] ml-auto opacity-70">
+              {isCounter ? 'Numéroté automatiquement' : 'Désactivé'}
+            </span>
+          </label>
 
           {/* Couleur + Épaisseur trait */}
           <div className="flex gap-3">
@@ -180,6 +202,9 @@ export default function PerimeterModal({ groups, toolType, onConfirm, onClose }:
                       style={{ backgroundColor: g.color }}
                     />
                     <span className="truncate">{g.name}</span>
+                    {g.isCounter && (
+                      <span className="shrink-0 text-[9px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded px-1">#</span>
+                    )}
                     <span className="ml-auto text-slate-500 shrink-0">{Math.round(g.totalLength)} px</span>
                   </button>
                 ))}

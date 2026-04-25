@@ -63,6 +63,7 @@ function App() {
   const [counterDrawingMode, setCounterDrawingMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showSaveAsModal, setShowSaveAsModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
   const [zones, setZones] = useState<AnnotationZone[]>([])
   const [showZoneModal, setShowZoneModal] = useState(false)
   const [pendingZone, setPendingZone] = useState<{ points: Point[]; color: string; opacity: number } | null>(null)
@@ -213,6 +214,7 @@ function App() {
         elementThickness: data.elementThickness,
         articleCCTP: data.articleCCTP,
         deduction: data.deduction,
+        isCounter: data.isCounter,
         paths: [],
         totalLength: 0,
       }])
@@ -247,11 +249,33 @@ function App() {
   }, [])
 
   const handlePathFinished = useCallback((groupId: string, path: PerimeterPath) => {
-    setPerimeterGroups(prev => prev.map(g => {
-      if (g.id !== groupId) return g
-      const updatedPaths = [...g.paths, path]
-      return { ...g, paths: updatedPaths, totalLength: updatedPaths.reduce((s, p) => s + p.length, 0) }
-    }))
+    setPerimeterGroups(prev => {
+      const group = prev.find(g => g.id === groupId)
+      if (group?.isCounter) {
+        const existingCount = prev.filter(g => g.counterParentId === groupId).length
+        const subGroup: PerimeterGroup = {
+          id: crypto.randomUUID(),
+          name: `${group.name} - ${existingCount + 1}`,
+          type: group.type,
+          color: group.color,
+          thickness: group.thickness,
+          height: group.height,
+          width: group.width,
+          elementThickness: group.elementThickness,
+          articleCCTP: group.articleCCTP,
+          deduction: group.deduction,
+          counterParentId: groupId,
+          paths: [path],
+          totalLength: path.length,
+        }
+        return [...prev, subGroup]
+      }
+      return prev.map(g => {
+        if (g.id !== groupId) return g
+        const updatedPaths = [...g.paths, path]
+        return { ...g, paths: updatedPaths, totalLength: updatedPaths.reduce((s, p) => s + p.length, 0) }
+      })
+    })
   }, [])
 
   const handleCancelDrawing = useCallback(() => {
@@ -420,11 +444,32 @@ function App() {
     return `${Math.round(px2)} px²`
   }
 
-  const handleExportExcel = () => {
-    const rows = perimeterGroups.map(g => {
-      const isSurface = g.type === 'surface'
+  const hasCounterGroups = perimeterGroups.some(g => g.isCounter)
+  const handleExportExcel = () => setShowExportModal(true)
 
-      // Surface: area; perimeter: total length
+  const doExport = (expandCounters: boolean) => {
+    // If expandCounters=false, merge sub-groups into their parent
+    let exportGroups: PerimeterGroup[]
+    if (expandCounters) {
+      exportGroups = perimeterGroups.filter(g => !g.isCounter || g.paths.length > 0 || perimeterGroups.some(c => c.counterParentId === g.id))
+    } else {
+      // Merge sub-groups back into parent template
+      const merged: PerimeterGroup[] = []
+      for (const g of perimeterGroups) {
+        if (g.counterParentId) continue // skip sub-groups (aggregated under parent)
+        if (g.isCounter) {
+          const children = perimeterGroups.filter(c => c.counterParentId === g.id)
+          const totalLength = children.reduce((s, c) => s + c.totalLength, 0)
+          merged.push({ ...g, paths: children.flatMap(c => c.paths), totalLength })
+        } else {
+          merged.push(g)
+        }
+      }
+      exportGroups = merged
+    }
+
+    const rows = exportGroups.map(g => {
+      const isSurface = g.type === 'surface'
       let surfaceVal = ''
       if (isSurface) {
         surfaceVal = formatArea(g.totalLength)
@@ -432,8 +477,6 @@ function App() {
         const lengthM = g.totalLength / calibration.pixelsPerUnit
         surfaceVal = `${(lengthM * g.width).toFixed(2)} m²`
       }
-
-      // Volume = surface × elementThickness if available
       let volumeVal = ''
       if (g.elementThickness !== undefined) {
         if (isSurface && calibration) {
@@ -445,7 +488,6 @@ function App() {
           volumeVal = `${(area * g.elementThickness).toFixed(3)} m³`
         }
       }
-
       return {
         'Article CCTP': g.articleCCTP ?? '',
         'Désignation': g.name,
@@ -460,36 +502,21 @@ function App() {
       }
     })
 
-    // Add counter groups at the bottom of the main sheet
     const counterRows = counterGroups.map(g => ({
       'Article CCTP': '',
       'Désignation': `[Compteur] ${g.name}`,
       'Quantité': g.markers.length,
-      'Longueur': '',
-      'Largeur': '',
-      'Hauteur': '',
-      'Épaisseur': '',
-      'Surface': '',
-      'Volume': '',
-      'Déduction': '',
+      'Longueur': '', 'Largeur': '', 'Hauteur': '', 'Épaisseur': '', 'Surface': '', 'Volume': '', 'Déduction': '',
     }))
-    const allRows = [...rows, ...counterRows]
 
-    const ws = XLSX.utils.json_to_sheet(allRows)
+    const ws = XLSX.utils.json_to_sheet([...rows, ...counterRows])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Groupes')
-
-    // Second sheet: counter details (without Couleur)
     if (counterGroups.length > 0) {
-      const counterDetailRows = counterGroups.map(g => ({
-        'Nom': g.name,
-        'Quantité': g.markers.length,
-      }))
-      const wsCounters = XLSX.utils.json_to_sheet(counterDetailRows)
-      XLSX.utils.book_append_sheet(wb, wsCounters, 'Compteurs')
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(counterGroups.map(g => ({ 'Nom': g.name, 'Quantité': g.markers.length }))), 'Compteurs')
     }
-
     XLSX.writeFile(wb, `kutch-export-${new Date().toISOString().slice(0, 10)}.xlsx`)
+    setShowExportModal(false)
   }
 
   if (!project) {
@@ -657,6 +684,13 @@ function App() {
           onClose={() => setShowSaveAsModal(false)}
         />
       )}
+      {showExportModal && (
+        <ExportModal
+          hasCounterGroups={hasCounterGroups}
+          onExport={doExport}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
       {pendingCalibPixels !== null && (
         <CalibrationModal
           pixelLength={pendingCalibPixels}
@@ -704,6 +738,58 @@ function SaveAsModal({ defaultName, onConfirm, onClose }: {
             className="flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-medium transition-colors"
           >
             Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Export Modal ──────────────────────────────────────────────────────────────
+function ExportModal({ hasCounterGroups, onExport, onClose }: {
+  hasCounterGroups: boolean
+  onExport: (expandCounters: boolean) => void
+  onClose: () => void
+}) {
+  const [expandCounters, setExpandCounters] = useState(true)
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40" onClick={onClose}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-80 p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold text-slate-100 mb-1">Export Excel</h3>
+        <p className="text-xs text-slate-500 mb-4">Configurer l'export avant de télécharger.</p>
+
+        {hasCounterGroups ? (
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer mb-4 transition-colors ${
+            expandCounters ? 'bg-amber-600/15 border-amber-500/40' : 'bg-slate-800 border-slate-700'
+          }`}>
+            <input
+              type="checkbox"
+              checked={expandCounters}
+              onChange={e => setExpandCounters(e.target.checked)}
+              className="mt-0.5 accent-amber-500"
+            />
+            <div>
+              <span className="text-xs font-semibold text-slate-200 block">Afficher les COMPTEURS individuellement</span>
+              <span className="text-[11px] text-slate-500 mt-0.5 block">
+                {expandCounters
+                  ? 'Chaque désignation numérotée aura sa propre ligne (ex: Voiles INT - 1, Voiles INT - 2…)'
+                  : 'Les désignations numérotées seront fusionnées sous leur groupe parent'}
+              </span>
+            </div>
+          </label>
+        ) : (
+          <p className="text-xs text-slate-600 bg-slate-800 rounded-lg px-3 py-2 mb-4">
+            Aucun groupe COMPTEUR dans ce projet.
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs font-medium transition-colors">Annuler</button>
+          <button
+            onClick={() => onExport(expandCounters)}
+            className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
+          >
+            Exporter
           </button>
         </div>
       </div>

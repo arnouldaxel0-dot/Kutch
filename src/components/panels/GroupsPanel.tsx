@@ -23,9 +23,7 @@ function formatArea(px2: number, calibration: Calibration | null): string {
 
 export default function GroupsPanel({ groups, counterGroups = [], calibration, onDeleteCounterGroup }: GroupsPanelProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-
-  const toggle = (id: string) =>
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
+  const toggle = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
   if (groups.length === 0 && counterGroups.length === 0) {
     return (
@@ -45,37 +43,50 @@ export default function GroupsPanel({ groups, counterGroups = [], calibration, o
     )
   }
 
-  return (
-    <div className="overflow-y-auto flex-1 text-xs bg-slate-900">
-      {/* Perimeter / Surface groups */}
-      {groups.map(group => {
-        const isOpen = expanded[group.id]
-        const totalPx = group.totalLength
-        const totalDisplay = group.type === 'surface'
-          ? formatArea(totalPx, calibration)
-          : formatLength(totalPx, calibration) // perimeter or distance
-        const hasDetails = group.height !== undefined || group.width !== undefined || group.paths.length > 0
-        const typeLabel = group.type === 'surface' ? 'S' : group.type === 'distance' ? 'D' : 'P'
-        return (
-          <div key={group.id}>
-            <button
-              onClick={() => toggle(group.id)}
-              className="flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-slate-800 text-left border-b border-slate-800"
-            >
-              {hasDetails
-                ? (isOpen ? <ChevronDown size={11} className="text-slate-500 shrink-0" /> : <ChevronRight size={11} className="text-slate-500 shrink-0" />)
-                : <span className="w-3 shrink-0" />
-              }
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-              <span className="flex-1 truncate text-slate-200 font-medium">{group.name}</span>
-              <span className="text-slate-600 text-[9px] shrink-0 mr-1">{typeLabel}</span>
-              <span className="text-slate-400 shrink-0 tabular-nums ml-1">
-                {totalDisplay}
-              </span>
-            </button>
+  const renderGroup = (group: import('../../types').PerimeterGroup, indent = false) => {
+    const isOpen = expanded[group.id]
+    const typeLabel = group.type === 'surface' ? 'S' : group.type === 'distance' ? 'D' : 'P'
 
-            {isOpen && hasDetails && (
-              <div className="pl-7 pr-2 py-1 border-b border-slate-800/50 space-y-0.5">
+    // For counter parent: aggregate children totals
+    const children = group.isCounter ? groups.filter(g => g.counterParentId === group.id) : []
+    const totalPx = group.isCounter
+      ? children.reduce((s, c) => s + c.totalLength, 0)
+      : group.totalLength
+    const totalDisplay = group.type === 'surface'
+      ? formatArea(totalPx, calibration)
+      : formatLength(totalPx, calibration)
+
+    const hasDetails = group.height !== undefined || group.width !== undefined ||
+      group.paths.length > 0 || (group.isCounter && children.length > 0)
+
+    return (
+      <div key={group.id}>
+        <button
+          onClick={() => toggle(group.id)}
+          className={`flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-slate-800 text-left border-b border-slate-800 ${indent ? 'pl-6' : ''}`}
+        >
+          {hasDetails
+            ? (isOpen ? <ChevronDown size={11} className="text-slate-500 shrink-0" /> : <ChevronRight size={11} className="text-slate-500 shrink-0" />)
+            : <span className="w-3 shrink-0" />
+          }
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+          <span className={`flex-1 truncate font-medium ${indent ? 'text-slate-400' : 'text-slate-200'}`}>{group.name}</span>
+          {group.isCounter && (
+            <span className="shrink-0 text-[9px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded px-1 mr-1">
+              #{children.length}
+            </span>
+          )}
+          <span className="text-slate-600 text-[9px] shrink-0 mr-1">{typeLabel}</span>
+          <span className="text-slate-400 shrink-0 tabular-nums">{totalDisplay}</span>
+        </button>
+
+        {isOpen && hasDetails && (
+          <div className={`border-b border-slate-800/50 ${indent ? '' : ''}`}>
+            {/* Sub-groups (counter children) */}
+            {group.isCounter && children.map(child => renderGroup(child, true))}
+            {/* Detail rows */}
+            {!group.isCounter && (
+              <div className="pl-7 pr-2 py-1 space-y-0.5">
                 {group.height !== undefined && (
                   <div className="flex justify-between text-slate-500 py-0.5">
                     <span>Hauteur</span><span>{group.height} m</span>
@@ -92,8 +103,17 @@ export default function GroupsPanel({ groups, counterGroups = [], calibration, o
               </div>
             )}
           </div>
-        )
-      })}
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-y-auto flex-1 text-xs bg-slate-900">
+      {/* Perimeter / Surface / Distance groups — skip sub-groups (rendered under parent) */}
+      {groups
+        .filter(g => !g.counterParentId)
+        .map(group => renderGroup(group))}
 
       {/* Counter groups */}
       {counterGroups.length > 0 && (
