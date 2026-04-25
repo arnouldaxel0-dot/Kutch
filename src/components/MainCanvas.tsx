@@ -31,6 +31,7 @@ interface MainCanvasProps {
   onExitCounterMode: () => void
   onDeletePath: (groupId: string, pathId: string) => void
   onUpdatePath: (groupId: string, pathId: string, newPoints: Point[]) => void
+  onUpdateGroup: (groupId: string, updates: Partial<PerimeterGroup>) => void
   calibration: Calibration | null
   zones: AnnotationZone[]
   onZoneFinished: (points: Point[], color: string, opacity: number) => void
@@ -96,6 +97,7 @@ export default function MainCanvas({
   onExitCounterMode,
   onDeletePath,
   onUpdatePath,
+  onUpdateGroup,
   calibration,
   zones,
   onZoneFinished,
@@ -127,6 +129,7 @@ export default function MainCanvas({
   const [draggingMarker, setDraggingMarker] = useState<{
     groupId: string; markerId: string
   } | null>(null)
+  const [draggingCounterLabel, setDraggingCounterLabel] = useState<{ groupId: string } | null>(null)
   const [isHoveringPoint, setIsHoveringPoint] = useState(false)
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
   const [draggingZoneVertex, setDraggingZoneVertex] = useState<{ zoneId: string; idx: number } | null>(null)
@@ -368,6 +371,18 @@ export default function MainCanvas({
             }
           }
         }
+        // Check counter labels
+        const labelThresh = 10 / scaleRef.current
+        for (const g of perimeterGroups.filter(g => g.counterParentId && g.paths.length > 0)) {
+          const path = g.paths[0]
+          const lx = g.labelPos?.x ?? (path.points.reduce((s, p) => s + p.x, 0) / path.points.length)
+          const ly = g.labelPos?.y ?? (path.points.reduce((s, p) => s + p.y, 0) / path.points.length)
+          if ((lx - pt.x) ** 2 + (ly - pt.y) ** 2 <= labelThresh ** 2) {
+            setDraggingCounterLabel({ groupId: g.id })
+            return
+          }
+        }
+
         // Otherwise hit-test for selection
         const hit = findPathAtPoint(pt)
         if (hit) {
@@ -427,6 +442,12 @@ export default function MainCanvas({
         if (g.id !== draggingMarker.groupId) return g
         return { ...g, markers: g.markers.map(m => m.id !== draggingMarker.markerId ? m : { ...m, point: pt }) }
       }))
+      return
+    }
+
+    // Drag counter label
+    if (draggingCounterLabel) {
+      onUpdateGroup(draggingCounterLabel.groupId, { labelPos: pt })
       return
     }
 
@@ -506,6 +527,7 @@ export default function MainCanvas({
     if (draggingMarker) setDraggingMarker(null)
     if (draggingZoneVertex) setDraggingZoneVertex(null)
     if (draggingZoneBodyRef.current) draggingZoneBodyRef.current = null
+    if (draggingCounterLabel) setDraggingCounterLabel(null)
   }
 
   const handleMouseLeave = () => {
@@ -1066,6 +1088,39 @@ export default function MainCanvas({
                 </g>
               ))
             )}
+
+            {/* Counter sub-group numbered labels */}
+            {perimeterGroups
+              .filter(g => g.counterParentId && g.paths.length > 0)
+              .map(g => {
+                const path = g.paths[0]
+                const cx = g.labelPos?.x ?? (path.points.reduce((s, p) => s + p.x, 0) / path.points.length)
+                const cy = g.labelPos?.y ?? (path.points.reduce((s, p) => s + p.y, 0) / path.points.length)
+                const num = g.name.split(' - ').pop() ?? g.name
+                const fw = (num.length * 5.5 + 12) / scale
+                const fh = 15 / scale
+                return (
+                  <g
+                    key={`lbl-${g.id}`}
+                    style={{ cursor: 'move' }}
+                    onMouseDown={e => {
+                      e.stopPropagation()
+                      setDraggingCounterLabel({ groupId: g.id })
+                    }}
+                  >
+                    <rect x={cx - fw / 2} y={cy - fh / 2} width={fw} height={fh} rx={3 / scale} fill={g.color} fillOpacity={0.92} />
+                    <text
+                      x={cx} y={cy}
+                      textAnchor="middle" dominantBaseline="central"
+                      fill="white" fontSize={9 / scale} fontWeight="bold" fontFamily="sans-serif"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {num}
+                    </text>
+                  </g>
+                )
+              })
+            }
 
             {/* Calibration points and line */}
             {calibrationMode && calibPoints.length >= 1 && (

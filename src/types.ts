@@ -22,6 +22,7 @@ export interface PerimeterGroup {
   pricePerML?: number
   isCounter?: boolean             // true → each drawn path creates a numbered sub-group
   counterParentId?: string        // set on sub-groups; links back to the parent template
+  labelPos?: Point                // draggable label position for counter sub-groups
   paths: PerimeterPath[]
   totalLength: number             // for perimeter/distance: length; for surface: area in px²
 }

@@ -611,6 +611,7 @@ function App() {
           onExitCounterMode={handleExitCounterMode}
           onDeletePath={handleDeletePath}
           onUpdatePath={handleUpdatePath}
+          onUpdateGroup={handleUpdateGroup}
           calibration={calibration}
           zones={zones}
           onZoneFinished={handleZoneFinished}

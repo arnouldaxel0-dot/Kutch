@@ -28,6 +28,7 @@ import type { Tool } from '../App'
 import type { PerimeterGroup, CounterGroup } from '../types'
 import ToolbarButton from './ui/ToolbarButton'
 import Tooltip from './ui/Tooltip'
+import GroupPickerModal from './GroupPickerModal'
 
 interface ToolbarProps {
   activeTool: Tool
@@ -90,33 +91,21 @@ export default function Toolbar({
   onZoneClick,
   onPrint,
 }: ToolbarProps) {
-  const [showPerimeterDropdown, setShowPerimeterDropdown] = useState(false)
-  const [showSurfaceDropdown, setShowSurfaceDropdown] = useState(false)
-  const [showDistanceDropdown, setShowDistanceDropdown] = useState(false)
-  const [showCounterDropdown, setShowCounterDropdown] = useState(false)
+  const [showGroupPicker, setShowGroupPicker] = useState<'perimeter' | 'surface' | 'distance' | 'counter' | null>(null)
   const [showLogoMenu, setShowLogoMenu] = useState(false)
   const [logoMenuPos, setLogoMenuPos] = useState({ top: 40, left: 8 })
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const surfaceDropdownRef = useRef<HTMLDivElement>(null)
-  const distanceDropdownRef = useRef<HTMLDivElement>(null)
-  const counterDropdownRef = useRef<HTMLDivElement>(null)
   const logoMenuRef = useRef<HTMLDivElement>(null)
   const logoButtonRef = useRef<HTMLButtonElement>(null)
 
-  // Close dropdowns on outside click
+  // Close logo menu on outside click
   useEffect(() => {
+    if (!showLogoMenu) return
     const handleClick = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowPerimeterDropdown(false)
-      if (surfaceDropdownRef.current && !surfaceDropdownRef.current.contains(e.target as Node)) setShowSurfaceDropdown(false)
-      if (distanceDropdownRef.current && !distanceDropdownRef.current.contains(e.target as Node)) setShowDistanceDropdown(false)
-      if (counterDropdownRef.current && !counterDropdownRef.current.contains(e.target as Node)) setShowCounterDropdown(false)
       if (logoMenuRef.current && !logoMenuRef.current.contains(e.target as Node)) setShowLogoMenu(false)
     }
-    if (showPerimeterDropdown || showSurfaceDropdown || showDistanceDropdown || showCounterDropdown || showLogoMenu) {
-      document.addEventListener('mousedown', handleClick)
-    }
+    document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [showPerimeterDropdown, showSurfaceDropdown, showDistanceDropdown, showCounterDropdown, showLogoMenu])
+  }, [showLogoMenu])
 
   return (
     <div className="no-print flex items-center h-10 bg-slate-800 border-b border-slate-700 px-2 gap-0.5 shrink-0 overflow-x-auto">
@@ -260,8 +249,8 @@ export default function Toolbar({
         active={activeTool === 'pointer'}
         onClick={() => setActiveTool('pointer')}
       />
-      {/* Surface with dropdown arrow */}
-      <div className="relative flex items-center" ref={surfaceDropdownRef}>
+      {/* Surface with picker */}
+      <div className="relative flex items-center">
         <Tooltip text="Surface" position="bottom">
           <button
             onClick={onSurfaceClick}
@@ -277,44 +266,16 @@ export default function Toolbar({
         </Tooltip>
         <Tooltip text="Groupes surface existants" position="bottom">
           <button
-            onClick={() => setShowSurfaceDropdown(v => !v)}
-            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
-              showSurfaceDropdown
-                ? 'bg-indigo-600 text-white'
-                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
-            }`}
+            onClick={() => setShowGroupPicker('surface')}
+            className="flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <ChevronDown size={11} />
           </button>
         </Tooltip>
-        {showSurfaceDropdown && (
-          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
-            {perimeterGroups.filter(g => g.type === 'surface').length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe surface</div>
-            ) : (
-              perimeterGroups.filter(g => g.type === 'surface').map(group => (
-                <button
-                  key={group.id}
-                  onClick={() => {
-                    onStartDrawingForGroup(group)
-                    setShowSurfaceDropdown(false)
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Périmètre with dropdown arrow */}
-      <div className="relative flex items-center" ref={dropdownRef}>
+      {/* Périmètre with picker */}
+      <div className="relative flex items-center">
         <Tooltip text="Périmètre" position="bottom">
           <button
             onClick={onPerimetreClick}
@@ -330,46 +291,16 @@ export default function Toolbar({
         </Tooltip>
         <Tooltip text="Groupes existants" position="bottom">
           <button
-            onClick={() => setShowPerimeterDropdown(v => !v)}
-            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
-              showPerimeterDropdown
-                ? 'bg-indigo-600 text-white'
-                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
-            }`}
+            onClick={() => setShowGroupPicker('perimeter')}
+            className="flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <ChevronDown size={11} />
           </button>
         </Tooltip>
-
-        {/* Dropdown */}
-        {showPerimeterDropdown && (
-          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
-            {perimeterGroups.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe existant</div>
-            ) : (
-              perimeterGroups.map(group => (
-                <button
-                  key={group.id}
-                  onClick={() => {
-                    onStartDrawingForGroup(group)
-                    setShowPerimeterDropdown(false)
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Distance with dropdown arrow */}
-      <div className="relative flex items-center" ref={distanceDropdownRef}>
+      {/* Distance with picker */}
+      <div className="relative flex items-center">
         <Tooltip text="Distance (2 points)" position="bottom">
           <button
             onClick={onDistanceClick}
@@ -385,35 +316,16 @@ export default function Toolbar({
         </Tooltip>
         <Tooltip text="Groupes distance existants" position="bottom">
           <button
-            onClick={() => setShowDistanceDropdown(v => !v)}
-            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
-              showDistanceDropdown ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
-            }`}
+            onClick={() => setShowGroupPicker('distance')}
+            className="flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <ChevronDown size={11} />
           </button>
         </Tooltip>
-        {showDistanceDropdown && (
-          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
-            {perimeterGroups.filter(g => g.type === 'distance').length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe distance</div>
-            ) : (
-              perimeterGroups.filter(g => g.type === 'distance').map(group => (
-                <button
-                  key={group.id}
-                  onClick={() => { onStartDrawingForGroup(group); setShowDistanceDropdown(false) }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
-      {/* Compteur with dropdown arrow */}
-      <div className="relative flex items-center" ref={counterDropdownRef}>
+
+      {/* Compteur with picker */}
+      <div className="relative flex items-center">
         <Tooltip text="Compteur" position="bottom">
           <button
             onClick={onCounterClick}
@@ -429,41 +341,12 @@ export default function Toolbar({
         </Tooltip>
         <Tooltip text="Groupes compteur existants" position="bottom">
           <button
-            onClick={() => setShowCounterDropdown(v => !v)}
-            className={`flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 transition-colors ${
-              showCounterDropdown
-                ? 'bg-indigo-600 text-white'
-                : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
-            }`}
+            onClick={() => setShowGroupPicker('counter')}
+            className="flex items-center justify-center h-7 w-4 rounded-r border-l border-slate-700 hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"
           >
             <ChevronDown size={11} />
           </button>
         </Tooltip>
-        {showCounterDropdown && (
-          <div className="absolute top-8 left-0 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-xl min-w-40 py-1 overflow-hidden">
-            {counterGroups.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500 italic">Aucun groupe compteur</div>
-            ) : (
-              counterGroups.map(group => (
-                <button
-                  key={group.id}
-                  onClick={() => {
-                    onStartCounterForGroup(group)
-                    setShowCounterDropdown(false)
-                  }}
-                  className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-slate-800 text-left transition-colors"
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  <span className="text-xs text-slate-300 truncate">{group.name}</span>
-                  <span className="ml-auto text-slate-500 text-xs shrink-0">{group.markers.length}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       <div className="toolbar-separator" />
@@ -520,6 +403,18 @@ export default function Toolbar({
         <FileSpreadsheet size={13} />
         Export Excel
       </button>
+
+      {/* Group picker popup */}
+      {showGroupPicker && (
+        <GroupPickerModal
+          type={showGroupPicker}
+          perimeterGroups={perimeterGroups}
+          counterGroups={counterGroups}
+          onSelectPerimeterGroup={g => { onStartDrawingForGroup(g); setShowGroupPicker(null) }}
+          onSelectCounterGroup={g => { onStartCounterForGroup(g); setShowGroupPicker(null) }}
+          onClose={() => setShowGroupPicker(null)}
+        />
+      )}
     </div>
   )
 }
